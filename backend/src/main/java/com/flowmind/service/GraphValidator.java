@@ -48,10 +48,11 @@ public class GraphValidator {
             throw invalid("工作流必须有且仅有一个 input 节点（当前 " + inputCount + " 个）");
         }
 
-        // 2. 边两端节点必须存在，同时统计度数（孤立检测）与入度（环检测）
+        // 2. 边两端节点必须存在、无重复边，同时统计度数（孤立检测）与入度（不可达/环检测）
         Map<String, Integer> degree = new HashMap<>();
         Map<String, Integer> indegree = new HashMap<>();
         Map<String, List<String>> adjacency = new HashMap<>();
+        Set<String> edgeKeys = new HashSet<>();
         keys.forEach(k -> {
             degree.put(k, 0);
             indegree.put(k, 0);
@@ -63,6 +64,12 @@ public class GraphValidator {
             if (!keys.contains(edge.getTargetNodeKey())) {
                 throw invalid("边 targetNodeKey=" + edge.getTargetNodeKey() + " 指向不存在的节点");
             }
+            String edgeKey = edge.getSourceNodeKey() + "->" + edge.getTargetNodeKey()
+                    + "@" + (edge.getSourceHandle() == null ? "" : edge.getSourceHandle());
+            if (!edgeKeys.add(edgeKey)) {
+                throw invalid("存在重复边: " + edge.getSourceNodeKey() + "->" + edge.getTargetNodeKey()
+                        + (edge.getSourceHandle() == null ? "" : "@" + edge.getSourceHandle()));
+            }
             degree.merge(edge.getSourceNodeKey(), 1, Integer::sum);
             degree.merge(edge.getTargetNodeKey(), 1, Integer::sum);
             indegree.merge(edge.getTargetNodeKey(), 1, Integer::sum);
@@ -70,7 +77,7 @@ public class GraphValidator {
                     .add(edge.getTargetNodeKey());
         }
 
-        // 3. 孤立节点（input 除外）
+        // 3. 孤立节点（无任何边，input 除外）
         List<String> isolated = nodes.stream()
                 .filter(n -> !"input".equals(n.getType()) && degree.get(n.getNodeKey()) == 0)
                 .map(NodeDTO::getNodeKey)
@@ -79,7 +86,16 @@ public class GraphValidator {
             throw invalid("存在孤立节点: " + String.join(", ", isolated));
         }
 
-        // 4. Kahn 拓扑排序检测环
+        // 4. 不可达节点（入度为 0 且非 input，从 input 出发永远到不了）
+        List<String> unreachable = nodes.stream()
+                .filter(n -> !"input".equals(n.getType()) && indegree.get(n.getNodeKey()) == 0)
+                .map(NodeDTO::getNodeKey)
+                .collect(Collectors.toList());
+        if (!unreachable.isEmpty()) {
+            throw invalid("存在不可达节点（入度为 0 且非 input）: " + String.join(", ", unreachable));
+        }
+
+        // 5. Kahn 拓扑排序检测环
         Deque<String> queue = new ArrayDeque<>();
         indegree.forEach((k, d) -> {
             if (d == 0) {

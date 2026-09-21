@@ -14,6 +14,9 @@ import sys
 
 import requests
 
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8")
+
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8080"
 API = BASE + "/api"
 
@@ -70,6 +73,14 @@ def main():
     r = requests.post(f"{API}/auth/login", json={"username": ua, "password": pw}, timeout=10)
     check("登录 200", r.status_code == 200, f"got {r.status_code} {r.text[:100]}")
     token_a = r.json().get("token", token_a) if r.status_code == 200 else token_a
+    if token_a:
+        import base64
+        try:
+            header = json.loads(base64.urlsafe_b64decode(token_a.split(".")[0] + "=="))
+            alg_ok = header.get("alg") == "HS256"
+        except Exception:
+            alg_ok = False
+        check("JWT 签名算法 HS256", alg_ok, f"token header: {header if 'header' in dir() else '解析失败'}")
 
     r = requests.get(f"{API}/auth/me", headers={"Authorization": f"Bearer {token_a}"}, timeout=10)
     check("me 200 且字段齐全", r.status_code == 200 and has_fields(r.json(), ["id", "username", "email", "role", "createdAt"]), f"got {r.status_code} {r.text[:100]}")
@@ -137,6 +148,32 @@ def main():
     r = requests.put(f"{API}/workflows/{wf_id}/graph", headers=h_a, json=no_input, timeout=10)
     check("缺 input 节点拒绝 400 INVALID_GRAPH", r.status_code == 400 and expect_error(r, "INVALID_GRAPH"), f"got {r.status_code} {r.text[:120]}")
 
+    dup_edge = {
+        "nodes": [
+            {"nodeKey": "input_1", "type": "input", "name": "输入", "config": {"fields": []}, "positionX": 0, "positionY": 0},
+            {"nodeKey": "llm_1", "type": "llm", "name": "AI", "config": {"model": "m", "prompt": "p", "temperature": 0, "output_key": "o"}, "positionX": 100, "positionY": 0},
+        ],
+        "edges": [
+            {"sourceNodeKey": "input_1", "targetNodeKey": "llm_1", "sourceHandle": None},
+            {"sourceNodeKey": "input_1", "targetNodeKey": "llm_1", "sourceHandle": None},
+        ],
+    }
+    r = requests.put(f"{API}/workflows/{wf_id}/graph", headers=h_a, json=dup_edge, timeout=10)
+    check("重复边拒绝 400 INVALID_GRAPH", r.status_code == 400 and expect_error(r, "INVALID_GRAPH"), f"got {r.status_code} {r.text[:120]}")
+
+    unreachable = {
+        "nodes": [
+            {"nodeKey": "input_1", "type": "input", "name": "输入", "config": {"fields": []}, "positionX": 0, "positionY": 0},
+            {"nodeKey": "llm_1", "type": "llm", "name": "AI", "config": {"model": "m", "prompt": "p", "temperature": 0, "output_key": "o"}, "positionX": 100, "positionY": 0},
+            {"nodeKey": "llm_2", "type": "llm", "name": "孤儿", "config": {"model": "m", "prompt": "p", "temperature": 0, "output_key": "o"}, "positionX": 200, "positionY": 0},
+        ],
+        "edges": [
+            {"sourceNodeKey": "input_1", "targetNodeKey": "llm_1", "sourceHandle": None},
+        ],
+    }
+    r = requests.put(f"{API}/workflows/{wf_id}/graph", headers=h_a, json=unreachable, timeout=10)
+    check("不可达节点拒绝 400 INVALID_GRAPH", r.status_code == 400 and expect_error(r, "INVALID_GRAPH"), f"got {r.status_code} {r.text[:120]}")
+
     r = requests.put(f"{API}/workflows/{wf_id}/graph", headers=h_a, json=graph, timeout=10)
     check("重新保存合法图成功", r.status_code == 200, f"got {r.status_code}")
 
@@ -169,7 +206,7 @@ def main():
         for f in failures:
             print(f"  - {f}")
         sys.exit(1)
-    print("结果: ALL PASS ✅")
+    print("结果: ALL PASS")
 
 
 if __name__ == "__main__":

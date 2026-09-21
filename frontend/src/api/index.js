@@ -37,13 +37,24 @@ request.interceptors.request.use(
   (error) => Promise.reject(error)
 )
 
-// 登录/注册接口返回的 401 是「账号或密码错误」，不能当成登录态失效处理
+// 登录/注册接口返回的 401 是「账号或密码错误」（code=BAD_CREDENTIALS），
+// 不能当成登录态失效处理；真正失效的是 code=UNAUTHORIZED。
 const AUTH_WHITELIST = ['/auth/login', '/auth/register']
+const UNAUTHORIZED_CODES = ['UNAUTHORIZED', 'TOKEN_EXPIRED']
 
 let logoutToastShown = false
 
 function isAuthWhitelist(url = '') {
   return AUTH_WHITELIST.some((p) => String(url).includes(p))
+}
+
+/** 401 是否意味着「登录态失效需要重登」 */
+function isSessionExpired(status, code, url) {
+  if (status !== 401) return false
+  // 优先按契约里的业务 code 判断（后端已用 UNAUTHORIZED / BAD_CREDENTIALS 区分）
+  if (code) return UNAUTHORIZED_CODES.includes(code)
+  // 兜底：没有 code 时按请求路径判断
+  return !isAuthWhitelist(url)
 }
 
 // ---------- 响应拦截器：统一错误处理 ----------
@@ -54,7 +65,7 @@ request.interceptors.response.use(
     const data = error?.response?.data
     const url = error?.config?.url || ''
 
-    if (status === 401 && !isAuthWhitelist(url)) {
+    if (isSessionExpired(status, data?.code, url)) {
       // 登录态失效：清 token + 跳登录页
       clearAuth()
       if (!logoutToastShown) {
