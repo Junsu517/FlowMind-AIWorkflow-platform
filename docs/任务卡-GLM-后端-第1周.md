@@ -54,11 +54,12 @@ com.flowmind
 ## 验收清单（全部打勾才算完成）
 
 - [ ] `mvn spring-boot:run` 启动无报错
+- [ ] **契约脚本通过**：启动后端后运行 `python docs/contract_check.py`（依赖 requests 库），输出 ALL PASS ✅（脚本由统筹维护，不许修改脚本；失败就按失败项修代码）
 - [ ] Postman：register → login → me 全通过，token 可用
 - [ ] Postman：建工作流 → 保存图（含条件分支的工作流）→ 读图 → 列表（nodeCount 正确）→ 删除
 - [ ] 保存环状图被拒绝（INVALID_GRAPH）
 - [ ] 访问别人的工作流返回 403
-- [ ] 把上述 Postman 请求/响应截图或导出 JSON 交给统筹
+- [ ] 把契约脚本运行结果 + Postman 关键响应交给统筹
 
 ## 已知约定（避免返工）
 

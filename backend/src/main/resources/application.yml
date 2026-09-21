@@ -1,0 +1,32 @@
+server:
+  port: 8080
+
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${DB_URL:jdbc:mysql://localhost:3306/flowmind?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:123456}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    banner: false
+
+flowmind:
+  jwt:
+    secret: ${JWT_SECRET:flowmind-dev-jwt-secret-key-must-be-at-least-32-bytes!}
+    expire-days: 7
+
+deepseek:
+  base-url: https://api.deepseek.com/v1
+  api-key: ${DEEPSEEK_API_KEY:}
+
+logging:
+  level:
+    com.flowmind: info

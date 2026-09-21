@@ -6,7 +6,7 @@
 ## 通用约定
 
 - 基础路径：`/api`（前端 axios baseURL 固定 `/api`，本地开发 Vite 代理到 `http://127.0.0.1:8080`）
-- 鉴权：请求头 `Authorization: Bearer <token>`（除注册/登录外的所有接口）
+- 鉴权：请求头 `Authorization: Bearer <token>`（除注册/登录外的所有接口）；未携带或无效 token → `401` + `{"code":"UNAUTHORIZED","message":"..."}`
 - 时间格式：ISO 8601 字符串，如 `2026-09-20T14:30:00`
 - 成功响应：直接返回数据（删除接口返回 204 无 body）
 - 失败响应：HTTP 4xx/5xx + body：
