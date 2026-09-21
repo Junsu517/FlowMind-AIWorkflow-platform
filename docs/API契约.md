@@ -6,8 +6,8 @@
 ## 通用约定
 
 - 基础路径：`/api`（前端 axios baseURL 固定 `/api`，本地开发 Vite 代理到 `http://127.0.0.1:8080`）
-- 鉴权：请求头 `Authorization: Bearer <token>`（除注册/登录外的所有接口）；未携带或无效 token → `401` + `{"code":"UNAUTHORIZED","message":"..."}`
-- 时间格式：ISO 8601 字符串，如 `2026-09-20T14:30:00`
+- 鉴权：请求头 `Authorization: Bearer <token>`（除注册/登录外的所有接口）；未携带或无效 token → `401 UNAUTHORIZED`；token 过期 → `401 TOKEN_EXPIRED`。前端对两个 code 统一处理：清 token 跳登录页
+- 时间格式：ISO 8601 字符串，如 `2026-09-20T14:30:00`（服务器本地时间，无时区后缀；前端按本地时间解析展示）
 - 成功响应：直接返回数据（删除接口返回 204 无 body）
 - 失败响应：HTTP 4xx/5xx + body：
 ```json
@@ -16,7 +16,8 @@
 - 错误码总表（新增错误码需统筹批准）：
   | code | HTTP | 场景 |
   |------|------|------|
-  | UNAUTHORIZED | 401 | token 缺失/无效/过期 |
+  | UNAUTHORIZED | 401 | token 缺失/无效 |
+  | TOKEN_EXPIRED | 401 | token 已过期 |
   | BAD_CREDENTIALS | 401 | 用户名或密码错误 |
   | FORBIDDEN | 403 | 访问/操作他人资源 |
   | USERNAME_EXISTS | 400 | 注册用户名已存在 |
@@ -24,7 +25,7 @@
   | WORKFLOW_NOT_FOUND | 404 | 工作流不存在 |
   | INVALID_GRAPH | 400 | 图校验失败（message 说明具体原因） |
   | INTERNAL_ERROR | 500 | 未预期异常 |
-- 分页参数：`page`（从 1 开始）、`size`（默认 10，最大 50）
+- 分页参数：`page`（从 1 开始）、`size`（默认 10）；**size 超过 50 时后端截断为 50**（不报错）
 - 分页响应：
 ```json
 { "items": [], "total": 0, "page": 1, "size": 10 }
@@ -36,8 +37,9 @@
 ```json
 请求: { "username": "tom", "password": "12345678", "email": "tom@x.com" }
 201: { "token": "jwt...", "user": { "id": 1, "username": "tom", "email": "tom@x.com", "role": "user", "createdAt": "..." } }
-错误: 400 USERNAME_EXISTS
+错误: 400 USERNAME_EXISTS；400 VALIDATION_ERROR
 ```
+> 字段规则：username 3-20 位、仅字母数字下划线；password 6-64 位（后端同时校验上下限）；email 必填、格式校验、不要求唯一（登录只用 username）。前端后端校验规则必须一致。
 
 ### POST /api/auth/login
 ```json
@@ -52,6 +54,13 @@
 ```
 
 ## 工作流模块
+
+> **workflow 对象统一结构**（列表/创建/详情/更新响应均一致）：
+> `{ "id", "userId", "name", "description", "status", "nodeCount", "createdAt", "updatedAt" }`
+> - `userId`：归属用户，前端可用于判断资源归属
+> - `nodeCount`：当前图的节点数（列表用子查询，详情/创建实时统计）
+> - 列表排序：**updatedAt 倒序**
+> - DELETE 不存在的 id → `404 WORKFLOW_NOT_FOUND`
 
 ### GET /api/workflows?page=&size=
 ```json
