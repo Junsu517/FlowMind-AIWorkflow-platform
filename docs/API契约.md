@@ -13,6 +13,17 @@
 ```json
 { "code": "WORKFLOW_NOT_FOUND", "message": "工作流不存在" }
 ```
+- 错误码总表（新增错误码需统筹批准）：
+  | code | HTTP | 场景 |
+  |------|------|------|
+  | UNAUTHORIZED | 401 | token 缺失/无效/过期 |
+  | BAD_CREDENTIALS | 401 | 用户名或密码错误 |
+  | FORBIDDEN | 403 | 访问/操作他人资源 |
+  | USERNAME_EXISTS | 400 | 注册用户名已存在 |
+  | VALIDATION_ERROR | 400 | 参数校验失败 |
+  | WORKFLOW_NOT_FOUND | 404 | 工作流不存在 |
+  | INVALID_GRAPH | 400 | 图校验失败（message 说明具体原因） |
+  | INTERNAL_ERROR | 500 | 未预期异常 |
 - 分页参数：`page`（从 1 开始）、`size`（默认 10，最大 50）
 - 分页响应：
 ```json
@@ -72,8 +83,19 @@
 ```
 204 无 body
 ```
+> 删除语义：级联删除该工作流的节点和边；**执行历史（executions/node_logs）保留**，作为历史记录独立存在。
 
 ### PUT /api/workflows/{id}/graph （整图全量替换，事务内先删后插）
+
+图校验规则（违反均返回 400 INVALID_GRAPH，message 说明原因）：
+1. 节点 key 唯一、type 合法
+2. 有且仅有一个 input 节点
+3. 边的两端节点必须存在
+4. 无重复边（source+target+sourceHandle 完全相同）
+5. 无孤立节点（无任何边，input 除外）
+6. 无不可达节点（入度为 0 且非 input）
+7. 无环（拓扑排序检测）
+
 ```json
 请求:
 {

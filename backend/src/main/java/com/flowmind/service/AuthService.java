@@ -1,5 +1,6 @@
 package com.flowmind.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.flowmind.common.BusinessException;
 import com.flowmind.common.ErrorCode;
 import com.flowmind.common.JwtUtil;
