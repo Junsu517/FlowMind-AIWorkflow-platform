@@ -1,35 +1,27 @@
 <template>
   <div class="auth">
-    <aside class="auth__side">
+    <!-- 登录/注册页光斑更大更明显 -->
+    <span class="auth__blob auth__blob--indigo" />
+    <span class="auth__blob auth__blob--cyan" />
+
+    <div class="auth__brand">
       <div class="auth__logo">
         <span class="auth__logo-mark">FM</span>
         <span class="auth__logo-text">FlowMind</span>
       </div>
+      <p class="auth__slogan">编排你的 AI 工作流</p>
+    </div>
 
-      <h1 class="auth__slogan">把想法串成<br />可运行的工作流</h1>
-      <p class="auth__desc">
-        拖拽式节点编排，接入大模型与工具，一键执行并实时查看每个节点的输出。
-      </p>
-
-      <ul class="auth__features">
-        <li><i class="dot dot--blue" />可视化编排 input / llm / condition / http 节点</li>
-        <li><i class="dot dot--purple" />支持 <code v-pre>{{变量}}</code> 模板在节点间传递数据</li>
-        <li><i class="dot dot--green" />执行过程 SSE 流式回传，逐节点可追溯</li>
-      </ul>
-
-      <div class="auth__foot">FlowMind · 阶梯式工作流编排平台</div>
-    </aside>
-
-    <main class="auth__main">
-      <div class="auth__card fm-glass">
-        <h2 class="auth__title">{{ title }}</h2>
-        <p class="auth__subtitle">{{ subtitle }}</p>
-        <slot />
-        <div v-if="$slots.footer" class="auth__footer">
-          <slot name="footer" />
-        </div>
+    <div class="auth__card fm-glass">
+      <h2 class="auth__title">{{ title }}</h2>
+      <p class="auth__subtitle">{{ subtitle }}</p>
+      <slot />
+      <div v-if="$slots.footer" class="auth__footer">
+        <slot name="footer" />
       </div>
-    </main>
+    </div>
+
+    <p class="auth__foot">FlowMind · 可视化 AI 工作流编排平台</p>
   </div>
 </template>
 
@@ -42,150 +34,145 @@ defineProps({
 
 <style scoped>
 .auth {
+  position: relative;
   min-height: 100vh;
-  display: grid;
-  grid-template-columns: 1.05fr 1fr;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 40px;
-  padding: 48px 6vw;
+  justify-content: center;
+  gap: 26px;
+  padding: 48px 20px;
+  overflow: hidden;
 }
 
-.auth__side {
-  max-width: 520px;
+/* 登录页专属：更大更明显的光斑 */
+.auth__blob {
+  position: absolute;
+  z-index: 0;
+  border-radius: 50%;
+  filter: blur(110px);
+  pointer-events: none;
+}
+
+.auth__blob--indigo {
+  width: 760px;
+  height: 760px;
+  top: -300px;
+  left: -220px;
+  background: radial-gradient(circle at 50% 50%, var(--accent-1), transparent 70%);
+  opacity: 0.32;
+  animation: blob-drift 18s var(--ease) infinite alternate;
+}
+
+.auth__blob--cyan {
+  width: 680px;
+  height: 680px;
+  right: -200px;
+  bottom: -280px;
+  background: radial-gradient(circle at 50% 50%, var(--accent-2), transparent 70%);
+  opacity: 0.22;
+  animation: blob-drift 22s var(--ease) infinite alternate-reverse;
+}
+
+@keyframes blob-drift {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    transform: translate3d(40px, 30px, 0) scale(1.08);
+  }
+}
+
+/* ---------- 品牌区 ---------- */
+.auth__brand {
+  position: relative;
+  z-index: 1;
+  text-align: center;
 }
 
 .auth__logo {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 48px;
+  margin-bottom: 12px;
 }
 
 .auth__logo-mark {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
+  width: 42px;
+  height: 42px;
+  border-radius: var(--radius-md);
   display: grid;
   place-items: center;
   font-weight: 700;
-  color: #fff;
+  font-size: 15px;
   letter-spacing: 0.5px;
-  background: linear-gradient(135deg, var(--fm-primary), var(--fm-primary-2));
-  box-shadow: 0 8px 20px rgba(79, 110, 247, 0.35);
+  color: var(--on-brand);
+  background: var(--gradient-brand);
+  box-shadow: var(--shadow-glow);
 }
 
 .auth__logo-text {
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 700;
-  color: var(--fm-text-strong);
   letter-spacing: 0.5px;
+  background: var(--gradient-brand);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 .auth__slogan {
-  font-size: 40px;
-  line-height: 1.25;
-  margin: 0 0 18px;
-  color: var(--fm-text-strong);
-  font-weight: 700;
-}
-
-.auth__desc {
-  font-size: 15px;
-  line-height: 1.8;
-  color: var(--fm-muted);
-  margin: 0 0 28px;
-}
-
-.auth__features {
-  list-style: none;
-  padding: 0;
   margin: 0;
-  display: grid;
-  gap: 14px;
-}
-
-.auth__features li {
-  display: flex;
-  align-items: center;
-  gap: 10px;
   font-size: 14px;
-  color: #414a5e;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
 }
 
-.auth__features code {
-  background: rgba(79, 110, 247, 0.1);
-  color: var(--fm-primary);
-  padding: 1px 6px;
-  border-radius: 6px;
-  font-size: 13px;
-}
-
-.dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  display: inline-block;
-  flex: none;
-}
-
-.dot--blue {
-  background: #4f6ef7;
-}
-.dot--purple {
-  background: #7b5cf0;
-}
-.dot--green {
-  background: #22c1a4;
-}
-
-.auth__foot {
-  margin-top: 44px;
-  font-size: 12px;
-  color: rgba(107, 114, 128, 0.75);
-}
-
-.auth__main {
-  display: flex;
-  justify-content: center;
-}
-
+/* ---------- 玻璃卡片 ---------- */
 .auth__card {
+  position: relative;
+  z-index: 1;
   width: 100%;
   max-width: 420px;
-  padding: 36px 34px 30px;
-  background: var(--fm-glass-strong);
-  box-shadow: var(--fm-shadow-lg);
+  padding: 34px 32px 28px;
+  background: var(--surface-glass-strong);
+  border: 1px solid var(--border-glass);
+  box-shadow: var(--shadow-card), 0 0 60px var(--accent-glow-soft);
 }
 
 .auth__title {
   margin: 0 0 6px;
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 700;
-  color: var(--fm-text-strong);
+  color: var(--text-primary);
 }
 
 .auth__subtitle {
   margin: 0 0 26px;
   font-size: 13px;
-  color: var(--fm-muted);
+  color: var(--text-secondary);
 }
 
 .auth__footer {
-  margin-top: 20px;
+  margin-top: 22px;
   padding-top: 18px;
-  border-top: 1px solid var(--fm-line);
+  border-top: 1px solid var(--border-glass);
   font-size: 13px;
-  color: var(--fm-muted);
+  color: var(--text-secondary);
   text-align: center;
 }
 
-@media (max-width: 900px) {
-  .auth {
-    grid-template-columns: 1fr;
-    padding: 32px 20px;
-  }
-  .auth__side {
-    display: none;
+.auth__foot {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+@media (max-width: 480px) {
+  .auth__card {
+    padding: 28px 22px 24px;
   }
 }
 </style>

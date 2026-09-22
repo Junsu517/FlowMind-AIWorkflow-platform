@@ -52,11 +52,11 @@ public class WorkflowService {
         workflow.setName(req.getName());
         workflow.setDescription(req.getDescription() == null ? "" : req.getDescription());
         workflowMapper.insert(workflow);
-        return toVO(workflowMapper.selectById(workflow.getId()), null);
+        return toVO(workflowMapper.selectById(workflow.getId()));
     }
 
     public WorkflowVO get(Long id) {
-        return toVO(loadOwned(id), null);
+        return toVO(loadOwned(id));
     }
 
     public WorkflowVO update(Long id, WorkflowUpdateRequest req) {
@@ -73,7 +73,7 @@ public class WorkflowService {
             patch.setDescription(req.getDescription());
         }
         workflowMapper.updateById(patch);
-        return toVO(workflowMapper.selectById(id), null);
+        return toVO(workflowMapper.selectById(id));
     }
 
     @Transactional
@@ -176,7 +176,8 @@ public class WorkflowService {
         }
     }
 
-    private WorkflowVO toVO(Workflow workflow, Long nodeCount) {
+    /** workflow 统一结构（契约 v1.2）：nodeCount 实时统计 */
+    private WorkflowVO toVO(Workflow workflow) {
         WorkflowVO vo = new WorkflowVO();
         vo.setId(workflow.getId());
         vo.setUserId(workflow.getUserId());
@@ -185,7 +186,8 @@ public class WorkflowService {
         vo.setStatus(workflow.getStatus());
         vo.setCreatedAt(workflow.getCreatedAt());
         vo.setUpdatedAt(workflow.getUpdatedAt());
-        vo.setNodeCount(nodeCount);
+        vo.setNodeCount(nodeMapper.selectCount(
+                new LambdaQueryWrapper<WorkflowNode>().eq(WorkflowNode::getWorkflowId, workflow.getId())));
         return vo;
     }
 }

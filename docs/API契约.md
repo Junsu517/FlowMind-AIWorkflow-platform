@@ -24,6 +24,9 @@
   | VALIDATION_ERROR | 400 | 参数校验失败 |
   | WORKFLOW_NOT_FOUND | 404 | 工作流不存在 |
   | INVALID_GRAPH | 400 | 图校验失败（message 说明具体原因） |
+  | INVALID_INPUT | 400 | 执行入参不满足 input 节点字段定义 |
+  | WORKFLOW_RUNNING | 409 | 同一工作流已有执行在运行 |
+  | EXECUTION_NOT_FOUND | 404 | 执行记录不存在 |
   | INTERNAL_ERROR | 500 | 未预期异常 |
 - 分页参数：`page`（从 1 开始）、`size`（默认 10）；**size 超过 50 时后端截断为 50**（不报错）
 - 分页响应：
@@ -146,6 +149,7 @@
 202: { "executionId": 12 }
 错误: 400 INVALID_INPUT（缺少 input 必填字段）；400 INVALID_GRAPH；409 WORKFLOW_RUNNING（同一工作流已有执行在跑，阶梯 1 简化限制）
 ```
+> **input 字段规则**：input 节点的 fields 中**无 default 的字段必填**（缺失 → 400 INVALID_INPUT）；有 default 的字段缺省时自动填充默认值。
 
 ### GET /api/executions/{id}/stream （SSE，text/event-stream）
 ```
@@ -165,7 +169,9 @@ event: execution_failed    data: {"error":"节点 llm_1 调用超时"}
   "input": {"city":"南昌"}, "output": {"llm_1":{"text":"..."}},
   "totalTokens": 1234, "totalCost": 0.0006, "durationMs": 5210,
   "errorMessage": null, "startedAt": "...", "finishedAt": "..." }
+错误: 404 EXECUTION_NOT_FOUND
 ```
+> `workflowName` 在工作流被删除后为 **null**（执行历史保留，名称不冗余存储）；前端对 null 显示"已删除的工作流"。
 
 ### GET /api/executions/{id}/logs
 ```json
@@ -182,6 +188,7 @@ event: execution_failed    data: {"error":"节点 llm_1 调用超时"}
 ```json
 200: { "items": [ 执行记录对象（同 GET /executions/{id}） ], "total": 0, "page": 1, "size": 10 }
 ```
+> 排序：**startedAt 倒序，同时间按 id 倒序**。
 
 ## 工具与统计
 
@@ -203,7 +210,9 @@ event: execution_failed    data: {"error":"节点 llm_1 调用超时"}
 ## 环境信息（给 GLM 后端）
 
 - DeepSeek：baseUrl `https://api.deepseek.com/v1`，Key 从环境变量 `DEEPSEEK_API_KEY` 读
-- **模型名**：先调 `GET /models` 确认可用模型名（当前返回 `deepseek-v4-flash`、`deepseek-v4-pro`），LLM 节点默认用 flash
+- **模型名**（2026-09 实测 `GET /models` 返回）：`deepseek-flash`、`deepseek-v4-pro`。LLM 节点默认模型 = **`deepseek-flash`**（旧名 `deepseek-v4-flash` 是服务端别名，也可用）
+- **v4 是推理模型**：流式 delta 含 `reasoning_content`（思考过程，占 token 大头）。后端只向 tokenSink 推送 `content`（最终答案）；SSE 阶段首 token 延迟明显属正常
+- **计费**：totalCost 按中值单价估算（输入/输出算术平均，代码注释标明来源与日期）；精确分输入输出计费为二期（需引擎支持拆分 token）
 - 数据库：MySQL `flowmind` 库，连接串从环境变量 `DB_URL` 读（本地开发默认 `jdbc:mysql://localhost:3306/flowmind`）
 - Redis：localhost:6379
 - 后端端口：8080

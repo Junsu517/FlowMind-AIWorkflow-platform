@@ -80,33 +80,56 @@ async function onSubmit() {
 .submit-btn {
   width: 100%;
   height: 44px;
+  margin-top: 4px;
   font-size: 15px;
+  font-weight: 600;
   letter-spacing: 4px;
-  background: linear-gradient(135deg, var(--fm-primary), var(--fm-primary-2));
   border: none;
+  border-radius: var(--radius-md);
+  background: var(--gradient-brand);
+  color: var(--on-brand);
+  transition: box-shadow 0.2s var(--ease), transform 0.2s var(--ease), opacity 0.2s var(--ease);
 }
 
 .submit-btn:hover {
-  opacity: 0.92;
+  box-shadow: var(--shadow-glow);
+  transform: translateY(-1px);
+  opacity: 0.96;
 }
 
 .link {
-  color: var(--fm-primary);
+  color: var(--accent-2);
   text-decoration: none;
   font-weight: 600;
+}
+
+.link:hover {
+  text-shadow: 0 0 12px var(--accent-2-glow);
 }
 
 .mock-hint {
   margin-top: 14px;
   font-size: 12px;
-  color: #8a6d3b;
-  background: rgba(255, 197, 84, 0.18);
-  border: 1px solid rgba(255, 197, 84, 0.45);
-  border-radius: 8px;
+  color: var(--warn);
+  background: var(--warn-soft);
+  border: 1px solid var(--warn-border);
+  border-radius: var(--radius-md);
   padding: 8px 10px;
 }
 
 :deep(.el-form-item) {
   margin-bottom: 20px;
+}
+
+:deep(.el-input__inner) {
+  color: var(--text-primary);
+}
+
+:deep(.el-input__prefix-inner .el-icon) {
+  color: var(--text-secondary);
+}
+
+:deep(.el-input__wrapper) {
+  background-color: var(--overlay-1);
 }
 </style>

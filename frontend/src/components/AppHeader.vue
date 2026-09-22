@@ -67,6 +67,7 @@ function onCommand(cmd) {
   border-left: none;
   border-right: none;
   border-top: none;
+  background: var(--surface-header);
 }
 
 .header__left {
@@ -83,17 +84,17 @@ function onCommand(cmd) {
   border-radius: 10px;
   display: grid;
   place-items: center;
-  color: #fff;
+  color: var(--on-brand);
   font-weight: 700;
   font-size: 13px;
-  background: linear-gradient(135deg, var(--fm-primary), var(--fm-primary-2));
-  box-shadow: 0 6px 16px rgba(79, 110, 247, 0.32);
+  background: var(--gradient-brand);
+  box-shadow: 0 6px 18px var(--accent-glow-strong);
 }
 
 .header__name {
   font-weight: 700;
   font-size: 17px;
-  color: var(--fm-text-strong);
+  color: var(--text-primary);
   letter-spacing: 0.4px;
 }
 
@@ -105,21 +106,21 @@ function onCommand(cmd) {
 
 .header__link {
   padding: 6px 12px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   font-size: 14px;
-  color: var(--fm-muted);
+  color: var(--text-secondary);
   text-decoration: none;
-  transition: all 0.2s;
+  transition: all 0.2s var(--ease);
 }
 
 .header__link:hover {
-  color: var(--fm-primary);
-  background: rgba(79, 110, 247, 0.08);
+  color: var(--text-primary);
+  background: var(--accent-glow-soft);
 }
 
 .header__link.router-link-active {
-  color: var(--fm-primary);
-  background: rgba(79, 110, 247, 0.1);
+  color: var(--text-primary);
+  background: var(--accent-nav-bg-active);
   font-weight: 600;
 }
 
@@ -136,7 +137,7 @@ function onCommand(cmd) {
   cursor: pointer;
   outline: none;
   font-size: 14px;
-  color: var(--fm-text);
+  color: var(--text-primary);
 }
 
 .header__avatar {
@@ -145,9 +146,9 @@ function onCommand(cmd) {
   border-radius: 50%;
   display: grid;
   place-items: center;
-  color: #fff;
+  color: var(--on-brand);
   font-size: 13px;
   font-weight: 600;
-  background: linear-gradient(135deg, #5b8def, #8f6bf0);
+  background: var(--gradient-brand);
 }
 </style>

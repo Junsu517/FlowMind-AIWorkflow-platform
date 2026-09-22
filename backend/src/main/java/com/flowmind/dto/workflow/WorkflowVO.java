@@ -6,7 +6,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 /**
- * 列表场景带 nodeCount；单查/创建场景该字段为 null 不输出。
+ * workflow 统一结构（契约 v1.2）：列表/创建/详情/更新响应一致，均含 nodeCount。
  */
 @Data
 @JsonInclude(JsonInclude.Include.NON_NULL)

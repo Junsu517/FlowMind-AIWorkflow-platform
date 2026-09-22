@@ -7,7 +7,7 @@
         <div>
           <h2 class="page-head__title">我的工作流</h2>
           <p class="page-head__sub">
-            共 {{ total }} 个工作流 · 编辑与执行能力将在后续迭代开放
+            共 <span class="fm-mono">{{ total }}</span> 个工作流 · 编辑器与执行能力将在后续迭代开放
           </p>
         </div>
         <el-button type="primary" :icon="Plus" size="large" @click="openCreate">
@@ -16,8 +16,15 @@
       </div>
 
       <div v-loading="loading" class="list-wrap">
-        <div v-if="!loading && list.length === 0" class="empty">
-          <el-empty description="还没有工作流，点击右上角「新建工作流」开始吧" />
+        <div v-if="!loading && list.length === 0" class="empty fm-glass">
+          <div class="empty__icon">
+            <el-icon><MagicStick /></el-icon>
+          </div>
+          <h3 class="empty__title">还没有工作流</h3>
+          <p class="empty__desc">
+            新建一个工作流，把 input、LLM、条件、HTTP 节点串成一条可运行的 AI 流程。
+          </p>
+          <el-button type="primary" :icon="Plus" @click="openCreate">新建工作流</el-button>
         </div>
 
         <div v-else class="grid">
@@ -73,7 +80,7 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, MagicStick } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AppHeader from '@/components/AppHeader.vue'
 import WorkflowCard from '@/components/WorkflowCard.vue'
@@ -198,32 +205,107 @@ onMounted(load)
   margin: 0 0 6px;
   font-size: 26px;
   font-weight: 700;
-  color: var(--fm-text-strong);
+  letter-spacing: 0.01em;
+  color: var(--text-primary);
 }
 
 .page-head__sub {
   margin: 0;
   font-size: 13px;
-  color: var(--fm-muted);
+  color: var(--text-secondary);
+}
+
+.page-head__sub .fm-mono {
+  color: var(--text-primary);
+}
+
+.page-head .el-button--primary {
+  height: 40px;
+  padding: 0 20px;
+  font-weight: 600;
+  border: none;
+  background: var(--gradient-brand);
+  box-shadow: 0 6px 20px var(--accent-glow-btn);
+  transition: box-shadow 0.2s var(--ease), transform 0.2s var(--ease), opacity 0.2s var(--ease);
+}
+
+.page-head .el-button--primary:hover {
+  box-shadow: var(--shadow-glow);
+  transform: translateY(-1px);
+  opacity: 0.96;
 }
 
 .list-wrap {
-  min-height: 320px;
+  min-height: 340px;
 }
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 18px;
 }
 
+/* ---------- 空状态 ---------- */
 .empty {
-  padding: 60px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 72px 24px 80px;
+}
+
+.empty__icon {
+  width: 76px;
+  height: 76px;
+  border-radius: 22px;
+  display: grid;
+  place-items: center;
+  font-size: 34px;
+  color: var(--on-brand);
+  background: var(--gradient-brand);
+  box-shadow: var(--shadow-glow), var(--shadow-pop);
+  margin-bottom: 22px;
+}
+
+.empty__title {
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.empty__desc {
+  margin: 0 0 24px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+  max-width: 380px;
+}
+
+.empty .el-button--primary {
+  height: 40px;
+  padding: 0 22px;
+  font-weight: 600;
+  border: none;
+  background: var(--gradient-brand);
+}
+
+.empty .el-button--primary:hover {
+  box-shadow: var(--shadow-glow);
+  transform: translateY(-1px);
 }
 
 .pager {
-  margin-top: 24px;
+  margin-top: 28px;
   display: flex;
   justify-content: flex-end;
+}
+
+@media (max-width: 900px) {
+  .page-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+  }
 }
 </style>

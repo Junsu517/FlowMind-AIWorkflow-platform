@@ -1,19 +1,99 @@
+/* ============================================================
+   FlowMind 设计令牌（docs/视觉规范.md v1）
+   深色科技感 + 玻璃拟态 + 霓虹渐变点缀
+   全站颜色必须走这里的变量，禁止散落硬编码色值
+   ============================================================ */
 :root {
-  --fm-bg: #f3f6fc;
-  --fm-text: #1e2433;
-  --fm-text-strong: #10151f;
-  --fm-muted: #6b7280;
-  --fm-line: rgba(16, 21, 31, 0.08);
-  --fm-glass: rgba(255, 255, 255, 0.72);
-  --fm-glass-strong: rgba(255, 255, 255, 0.88);
-  --fm-primary: #4f6ef7;
-  --fm-primary-2: #7b5cf0;
-  --fm-accent: #22c1a4;
-  --fm-radius: 16px;
-  --fm-shadow: 0 10px 30px rgba(31, 45, 92, 0.08);
-  --fm-shadow-lg: 0 18px 48px rgba(31, 45, 92, 0.14);
+  /* 深色主题（默认即深色，不做浅色切换） */
+  --bg-base: #0b0e14; /* 页面底色，近黑带一点蓝 */
+  --bg-elevated: #11151f; /* 卡片底 */
+  --bg-glass: rgba(255, 255, 255, 0.04); /* 玻璃卡片 */
+  --border-glass: rgba(255, 255, 255, 0.08);
+  --text-primary: #e6e9f0;
+  --text-secondary: #8b93a7;
+  --text-faint: rgba(139, 147, 167, 0.6);
+  --accent-1: #6366f1; /* 主色：靛蓝 */
+  --accent-2: #22d3ee; /* 辅色：青 */
+  --gradient-brand: linear-gradient(135deg, #6366f1 0%, #22d3ee 100%);
+  --radius-lg: 16px;
+  --radius-md: 12px;
+  --shadow-glow: 0 0 40px rgba(99, 102, 241, 0.25);
+
+  /* 派生令牌 */
+  --border-glass-strong: rgba(255, 255, 255, 0.16);
+  --shadow-card: 0 12px 32px rgba(0, 0, 0, 0.35);
+  --shadow-pop: 0 12px 30px rgba(0, 0, 0, 0.35);
+  --font-mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  /* 语义色：所有组件只允许引用这些，禁止再散落硬编码 */
+  --on-brand: #ffffff;
+  --overlay-1: rgba(255, 255, 255, 0.03);
+  --overlay-3: rgba(255, 255, 255, 0.05);
+  --overlay-4: rgba(255, 255, 255, 0.06);
+  --overlay-hover: rgba(255, 255, 255, 0.1);
+  --danger: #f87171;
+  --danger-soft: rgba(248, 113, 113, 0.1);
+  --danger-soft-strong: rgba(248, 113, 113, 0.18);
+  --danger-border: rgba(248, 113, 113, 0.35);
+  --danger-border-strong: rgba(248, 113, 113, 0.6);
+  --warn: #fbbf24;
+  --warn-soft: rgba(251, 191, 36, 0.1);
+  --warn-border: rgba(251, 191, 36, 0.28);
+  --surface-solid: #121724;
+  --surface-solid-2: #141926;
+  --surface-glass-strong: rgba(17, 21, 31, 0.72);
+  --surface-header: rgba(11, 14, 20, 0.62);
+  --accent-soft: rgba(99, 102, 241, 0.14);
+  --accent-border: rgba(99, 102, 241, 0.3);
+  --accent-nav-bg: rgba(99, 102, 241, 0.12);
+  --accent-nav-bg-active: rgba(99, 102, 241, 0.16);
+  --accent-glow-btn: rgba(99, 102, 241, 0.28);
+  --accent-glow-strong: rgba(99, 102, 241, 0.35);
+  --accent-glow-soft: rgba(99, 102, 241, 0.12);
+  --accent-2-glow: rgba(34, 211, 238, 0.5);
+  --focus-ring: 0 0 0 3px rgba(99, 102, 241, 0.15);
+  --accent-chip-text: #b9bcf7;
 }
 
+/* ---------- Element Plus 主题同步（主色 = accent-1） ---------- */
+html.dark {
+  --el-color-primary: #6366f1;
+  --el-color-primary-light-3: #8183f4;
+  --el-color-primary-light-5: #a3a5f7;
+  --el-color-primary-light-7: #c4c5fa;
+  --el-color-primary-light-8: #d5d6fc;
+  --el-color-primary-light-9: #e8e8fe;
+  --el-color-primary-dark-2: #4b4ec0;
+
+  --el-color-danger: #f87171;
+  --el-color-error: #f87171;
+  --el-color-success: #34d399;
+  --el-color-warning: #fbbf24;
+  --el-color-info: #8b93a7;
+
+  --el-border-radius-base: 10px;
+  --el-border-radius-small: 8px;
+  --el-border-radius-round: 999px;
+
+  --el-fill-color-blank: transparent;
+  --el-bg-color: var(--bg-elevated);
+  --el-bg-color-overlay: #141926;
+  --el-bg-color-page: var(--bg-base);
+  --el-text-color-primary: var(--text-primary);
+  --el-text-color-regular: var(--text-primary);
+  --el-text-color-secondary: var(--text-secondary);
+  --el-text-color-placeholder: #5c6478;
+  --el-border-color: var(--border-glass);
+  --el-border-color-light: var(--border-glass);
+  --el-border-color-lighter: var(--border-glass);
+  --el-border-color-extra-light: var(--border-glass);
+  --el-mask-color: rgba(3, 5, 10, 0.72);
+
+  color-scheme: dark;
+}
+
+/* ---------- 基础重置 ---------- */
 * {
   box-sizing: border-box;
 }
@@ -26,73 +106,216 @@ body,
 
 body {
   margin: 0;
-  color: var(--fm-text);
+  background: var(--bg-base);
+  color: var(--text-primary);
   font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
-  background: var(--fm-bg);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* 背景光斑：现代化后台的玻璃质感底 */
+/* ---------- 页面氛围：两个大号模糊渐变光斑 ---------- */
 body::before,
 body::after {
   content: '';
   position: fixed;
-  z-index: -1;
+  z-index: 0;
   border-radius: 50%;
-  filter: blur(60px);
-  opacity: 0.55;
+  filter: blur(90px);
+  opacity: 0.15;
   pointer-events: none;
 }
 
 body::before {
-  width: 520px;
-  height: 520px;
-  top: -160px;
-  left: -120px;
-  background: radial-gradient(circle at 30% 30%, #6d8bff, transparent 70%);
+  width: 620px;
+  height: 620px;
+  top: -220px;
+  left: -180px;
+  background: radial-gradient(circle at 50% 50%, var(--accent-1), transparent 70%);
 }
 
 body::after {
-  width: 560px;
-  height: 560px;
-  right: -180px;
-  bottom: -200px;
-  background: radial-gradient(circle at 60% 40%, #b18cff, transparent 70%);
+  width: 680px;
+  height: 680px;
+  right: -240px;
+  bottom: -260px;
+  background: radial-gradient(circle at 50% 50%, var(--accent-2), transparent 70%);
 }
 
+#app {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---------- 玻璃容器 ---------- */
 .fm-glass {
-  background: var(--fm-glass);
-  backdrop-filter: blur(18px) saturate(140%);
-  -webkit-backdrop-filter: blur(18px) saturate(140%);
-  border: 1px solid rgba(255, 255, 255, 0.7);
-  box-shadow: var(--fm-shadow);
-  border-radius: var(--fm-radius);
+  background: var(--bg-glass);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
 }
 
 .fm-page {
+  position: relative;
   max-width: 1180px;
   margin: 0 auto;
-  padding: 28px 24px 64px;
+  padding: 32px 24px 72px;
 }
 
-/* Element Plus 局部微调 */
-.el-button {
-  border-radius: 10px;
+/* ---------- 数字/徽章：等宽感 + 字距 ---------- */
+.fm-mono {
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
 }
 
-.el-input__wrapper,
-.el-textarea__inner {
-  border-radius: 10px;
-}
-
+/* mock 模式提示徽章（USE_MOCK=true 时才出现） */
 .fm-mock-tip {
   font-size: 12px;
-  color: #8a6d3b;
-  background: rgba(255, 197, 84, 0.18);
-  border: 1px solid rgba(255, 197, 84, 0.45);
+  color: var(--warn);
+  background: var(--warn-soft);
+  border: 1px solid var(--warn-border);
   border-radius: 999px;
   padding: 3px 10px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+/* ---------- 主/次按钮 ---------- */
+.fm-btn-primary {
+  background: var(--gradient-brand);
+  border: none;
+  color: var(--on-brand);
+  font-weight: 600;
+  border-radius: var(--radius-md);
+  transition: box-shadow 0.2s var(--ease), transform 0.2s var(--ease), opacity 0.2s var(--ease);
+}
+
+.fm-btn-primary:hover {
+  box-shadow: var(--shadow-glow);
+  transform: translateY(-1px);
+  opacity: 0.96;
+}
+
+.fm-btn-ghost {
+  background: var(--bg-glass);
+  border: 1px solid var(--border-glass);
+  color: var(--text-primary);
+  border-radius: var(--radius-md);
+}
+
+.fm-btn-ghost:hover {
+  border-color: var(--border-glass-strong);
+  background: var(--overlay-hover);
+}
+
+/* ---------- Element Plus 局部微调（统一深色玻璃手感） ---------- */
+.el-button {
+  border-radius: var(--radius-md);
+  font-weight: 500;
+}
+
+.el-input__wrapper,
+.el-textarea__inner,
+.el-select__wrapper {
+  border-radius: var(--radius-md);
+  background-color: var(--overlay-1);
+  box-shadow: 0 0 0 1px var(--border-glass) inset;
+  transition: box-shadow 0.2s var(--ease), background-color 0.2s var(--ease);
+}
+
+.el-input__wrapper:hover,
+.el-textarea__inner:hover {
+  box-shadow: 0 0 0 1px var(--border-glass-strong) inset;
+}
+
+.el-input__wrapper.is-focus,
+.el-textarea__inner:focus {
+  background-color: var(--overlay-3);
+  box-shadow: 0 0 0 1px var(--accent-1) inset, var(--focus-ring);
+}
+
+.el-overlay-dialog .el-dialog {
+  background: var(--surface-solid);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-glow), var(--shadow-card);
+}
+
+.el-pagination {
+  --el-pagination-bg-color: transparent;
+  --el-pagination-button-bg-color: var(--overlay-1);
+  --el-pagination-hover-color: var(--accent-1);
+}
+
+.el-pagination.is-background .el-pager li.is-active {
+  background: var(--gradient-brand);
+  color: var(--on-brand);
+  font-weight: 700;
+}
+
+.el-message-box {
+  background: var(--surface-solid-2);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-lg);
+}
+
+.el-message {
+  border-radius: var(--radius-md);
+}
+
+.el-empty__description p {
+  color: var(--text-secondary);
+}
+
+.el-loading-mask {
+  background-color: var(--surface-header);
+  backdrop-filter: blur(2px);
+}
+
+/* 滚动条 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--overlay-hover);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--overlay-hover);
+}
+
+/* ---------- 路由切换淡入 ---------- */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s var(--ease);
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+/* ---------- 弹窗弹性缩放 ---------- */
+.dialog-fade-enter-active .el-overlay-dialog .el-dialog {
+  transform: scale(1);
+}
+
+.dialog-fade-enter-from .el-overlay-dialog .el-dialog,
+.dialog-fade-leave-to .el-overlay-dialog .el-dialog {
+  transform: scale(0.94);
+  opacity: 0;
+}
+
+.el-overlay-dialog .el-dialog {
+  transition: transform 0.24s var(--ease), opacity 0.24s var(--ease);
 }

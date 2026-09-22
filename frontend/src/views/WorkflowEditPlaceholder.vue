@@ -47,7 +47,7 @@ onMounted(async () => {
 .placeholder {
   padding: 72px 32px;
   text-align: center;
-  background: var(--fm-glass-strong);
+  background: var(--surface-glass-strong);
 }
 
 .placeholder__icon {
@@ -58,27 +58,27 @@ onMounted(async () => {
   display: grid;
   place-items: center;
   font-size: 32px;
-  color: #fff;
-  background: linear-gradient(135deg, var(--fm-primary), var(--fm-primary-2));
-  box-shadow: 0 10px 26px rgba(79, 110, 247, 0.3);
+  color: var(--on-brand);
+  background: var(--gradient-brand);
+  box-shadow: var(--shadow-glow), var(--shadow-pop);
 }
 
 .placeholder__title {
   margin: 0 0 12px;
   font-size: 22px;
   font-weight: 700;
-  color: var(--fm-text-strong);
+  color: var(--text-primary);
 }
 
 .placeholder__desc {
   margin: 0 0 6px;
   font-size: 14px;
-  color: var(--fm-text);
+  color: var(--text-primary);
 }
 
 .placeholder__hint {
   margin: 0 0 26px;
   font-size: 13px;
-  color: var(--fm-muted);
+  color: var(--text-secondary);
 }
 </style>

@@ -19,7 +19,7 @@ public interface WorkflowMapper extends BaseMapper<Workflow> {
                    (SELECT COUNT(*) FROM workflow_nodes n WHERE n.workflow_id = w.id) AS node_count
             FROM workflows w
             WHERE w.user_id = #{userId}
-            ORDER BY w.created_at DESC, w.id DESC
+            ORDER BY w.updated_at DESC, w.id DESC
             """)
     IPage<WorkflowVO> selectPageWithNodeCount(IPage<WorkflowVO> page, @Param("userId") Long userId);
 }
