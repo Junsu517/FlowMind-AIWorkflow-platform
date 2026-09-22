@@ -27,6 +27,7 @@
   | INVALID_INPUT | 400 | 执行入参不满足 input 节点字段定义 |
   | WORKFLOW_RUNNING | 409 | 同一工作流已有执行在运行 |
   | EXECUTION_NOT_FOUND | 404 | 执行记录不存在 |
+  | RATE_LIMITED | 429 | 触发限流（execute 每用户每分钟 10 次） |
   | INTERNAL_ERROR | 500 | 未预期异常 |
 - 分页参数：`page`（从 1 开始）、`size`（默认 10）；**size 超过 50 时后端截断为 50**（不报错）
 - 分页响应：
