@@ -11,6 +11,7 @@ import json
 import random
 import string
 import sys
+import time
 
 import requests
 
@@ -199,6 +200,56 @@ def main():
     items = body.get("items", [])
     ok = r.status_code == 200 and len(items) >= 2 and all(has_fields(t, ["id", "name", "displayName", "description", "method", "paramsSchema"]) for t in items)
     check("tools 列表字段齐全且 ≥2 条", ok, f"got {r.status_code} {r.text[:150]}")
+
+    print("== 4. 执行模块 ==")
+    exec_graph = {
+        "nodes": [
+            {"nodeKey": "input_1", "type": "input", "name": "输入",
+             "config": {"fields": [{"key": "city", "label": "城市", "type": "text"}]},
+             "positionX": 0, "positionY": 0},
+            {"nodeKey": "llm_1", "type": "llm", "name": "AI",
+             "config": {"model": "deepseek-flash", "prompt": "Reply with exactly one word: hello", "temperature": 0, "output_key": "text"},
+             "positionX": 100, "positionY": 0},
+        ],
+        "edges": [{"sourceNodeKey": "input_1", "targetNodeKey": "llm_1", "sourceHandle": None}],
+    }
+    r = requests.post(f"{API}/workflows", headers=h_a, json={"name": "exec-check", "description": "script"}, timeout=10)
+    exec_wf = r.json().get("id") if r.status_code == 201 else None
+    check("执行测试工作流创建 201", exec_wf is not None, f"got {r.status_code}")
+    r = requests.put(f"{API}/workflows/{exec_wf}/graph", headers=h_a, json=exec_graph, timeout=10)
+    check("执行测试图保存 200", r.status_code == 200, f"got {r.status_code}")
+
+    r = requests.post(f"{API}/workflows/{exec_wf}/execute", headers=h_a, json={"input": {}}, timeout=10)
+    check("缺必填字段 400 INVALID_INPUT", r.status_code == 400 and expect_error(r, "INVALID_INPUT"), f"got {r.status_code} {r.text[:120]}")
+
+    r = requests.post(f"{API}/workflows/{exec_wf}/execute", headers=h_a, json={"input": {"city": "Nanchang"}}, timeout=10)
+    check("execute 202 返回 executionId", r.status_code == 202 and "executionId" in r.json(), f"got {r.status_code} {r.text[:120]}")
+    exec_id = r.json().get("executionId") if r.status_code == 202 else None
+
+    if exec_id:
+        terminal = None
+        for _ in range(30):
+            time.sleep(3)
+            r = requests.get(f"{API}/executions/{exec_id}", headers=h_a, timeout=10)
+            if r.status_code != 200:
+                break
+            detail = r.json()
+            if detail.get("status") in ("success", "failed", "cancelled"):
+                terminal = detail
+                break
+        check("执行到达终态", terminal is not None, f"30 次轮询后仍非终态")
+        if terminal:
+            check("执行详情字段齐全", has_fields(terminal, ["id", "workflowId", "workflowName", "status", "input", "output", "totalTokens", "totalCost", "durationMs", "startedAt"]), str(terminal)[:150])
+            check("执行成功且 token>0", terminal.get("status") == "success" and terminal.get("totalTokens", 0) > 0, f"status={terminal.get('status')} tokens={terminal.get('totalTokens')}")
+        r = requests.get(f"{API}/executions/{exec_id}/logs", headers=h_a, timeout=10)
+        body = r.json() if r.status_code == 200 else {}
+        log_items = body.get("items", [])
+        ok = r.status_code == 200 and len(log_items) >= 2 and all(has_fields(n, ["nodeKey", "nodeName", "nodeType", "status", "input", "output", "tokens", "durationMs", "errorMessage"]) for n in log_items)
+        check("节点日志字段齐全且 ≥2 条", ok, f"got {r.status_code} {r.text[:150]}")
+        r = requests.get(f"{API}/executions", headers=h_a, params={"page": 1, "size": 10}, timeout=10)
+        body = r.json() if r.status_code == 200 else {}
+        ok = r.status_code == 200 and has_fields(body, ["items", "total", "page", "size"]) and any(e.get("id") == exec_id for e in body.get("items", []))
+        check("执行历史列表含本次执行", ok, f"got {r.status_code}")
 
     print()
     if failures:
