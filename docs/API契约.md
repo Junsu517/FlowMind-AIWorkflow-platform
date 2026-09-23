@@ -7,6 +7,7 @@
 
 - 基础路径：`/api`（前端 axios baseURL 固定 `/api`，本地开发 Vite 代理到 `http://127.0.0.1:8080`）
 - 鉴权：请求头 `Authorization: Bearer <token>`（除注册/登录外的所有接口）；未携带或无效 token → `401 UNAUTHORIZED`；token 过期 → `401 TOKEN_EXPIRED`。前端对两个 code 统一处理：清 token 跳登录页
+- **TOKEN_EXPIRED 实现裁决（2026-09-23）**：后端当前对无效/过期 token 统一返回 `UNAUTHORIZED`（JwtUtil 未区分异常类型，第 1 周起如此）。因前端对两码处理完全相同，**保留现状不拆分**；TOKEN_EXPIRED 作为预留码保留在总表，未来若前端需要差异化提示再拆 ExpiredJwtException 分支
 - 时间格式：ISO 8601 字符串，如 `2026-09-20T14:30:00`（服务器本地时间，无时区后缀；前端按本地时间解析展示）
 - 成功响应：直接返回数据（删除接口返回 204 无 body）
 - 失败响应：HTTP 4xx/5xx + body：
