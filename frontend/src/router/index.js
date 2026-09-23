@@ -22,11 +22,16 @@ const routes = [
     meta: { title: '我的工作流', requiresAuth: true }
   },
   {
-    // 第 3 周才做编辑器，本周占位
     path: '/workflows/:id/edit',
     name: 'workflow-edit',
-    component: () => import('@/views/WorkflowEditPlaceholder.vue'),
+    component: () => import('@/views/WorkflowEdit.vue'),
     meta: { title: '工作流编辑器', requiresAuth: true }
+  },
+  {
+    path: '/executions',
+    name: 'executions',
+    component: () => import('@/views/Executions.vue'),
+    meta: { title: '执行历史', requiresAuth: true }
   },
   { path: '/:pathMatch(.*)*', redirect: '/workflows' }
 ]

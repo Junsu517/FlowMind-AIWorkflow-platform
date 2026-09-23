@@ -35,6 +35,11 @@ public class ExecutionController {
         return executionService.get(id);
     }
 
+    @GetMapping(value = "/api/executions/{id}/stream", produces = org.springframework.http.MediaType.TEXT_EVENT_STREAM_VALUE)
+    public org.springframework.web.servlet.mvc.method.annotation.SseEmitter stream(@PathVariable Long id) {
+        return executionService.stream(id);
+    }
+
     @GetMapping("/api/executions/{id}/logs")
     public Map<String, Object> logs(@PathVariable Long id) {
         return executionService.logs(id);

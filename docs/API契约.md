@@ -153,6 +153,11 @@
 > **input 字段规则**：input 节点的 fields 中**无 default 的字段必填**（缺失 → 400 INVALID_INPUT）；有 default 的字段缺省时自动填充默认值。
 
 ### GET /api/executions/{id}/stream （SSE，text/event-stream）
+> 语义补充（2026-09-23 裁决）：
+> - **事件不回放**：订阅前已发生的事件不补发（execute 返回后才可能拿到 id），只保证**终态补发**——执行已结束时连接，立即收到单个 execution_completed/execution_failed 后关闭
+> - **限流计数范围**：所有 execute 调用均计入 10 次/分钟（含 400/409 的失败请求，防刷）
+> - **Redis 故障时 fail-open**：限流放行并记录 warn 日志，不阻塞执行主流程
+> - `execution_completed.data.output` 含全部节点输出，HTTP 节点场景单事件可达 10KB+，前端勿直接渲染原文
 ```
 event: execution_started   data: {"executionId":12,"totalNodes":4}
 event: node_started        data: {"nodeKey":"llm_1","name":"AI 建议"}

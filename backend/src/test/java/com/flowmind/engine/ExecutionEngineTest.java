@@ -169,6 +169,42 @@ class ExecutionEngineTest {
     }
 
     @Test
+    void 回调时durationMs已设置() {
+        ExecutionEngine slowEngine = new ExecutionEngine(Map.of("llm", new NodeExecutor() {
+            @Override
+            public String type() {
+                return "llm";
+            }
+
+            @Override
+            public ExecutorResult execute(NodeExecutionContext ctx) {
+                try {
+                    Thread.sleep(50);
+                } catch (InterruptedException ignored) {
+                }
+                return new ExecutorResult(Map.of("text", "ok"), 0);
+            }
+        }));
+        final long[] cbDuration = {-1};
+        ExecutionListener listener = new ExecutionListener() {
+            @Override
+            public void onNodeCompleted(NodeResult node) {
+                if ("llm_1".equals(node.getNodeKey())) {
+                    cbDuration[0] = node.getDurationMs();
+                }
+            }
+        };
+        List<GraphNode> nodes = List.of(
+                node("input_1", "input", "输入", inputConfig),
+                node("llm_1", "llm", "AI", Map.of("prompt", "p", "output_key", "text")));
+        List<GraphEdge> edges = List.of(new GraphEdge("input_1", "llm_1", null));
+
+        slowEngine.execute(nodes, edges, Map.of("city", "南昌"), listener);
+
+        assertTrue(cbDuration[0] >= 50, "回调时 durationMs 应已设置，实际 " + cbDuration[0]);
+    }
+
+    @Test
     void 监听器收到完整事件序列() {
         List<String> events = new ArrayList<>();
         ExecutionListener listener = new ExecutionListener() {

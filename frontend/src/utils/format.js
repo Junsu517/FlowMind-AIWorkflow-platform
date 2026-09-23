@@ -10,6 +10,29 @@ export function formatDateTime(value) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
+/** 毫秒耗时 -> 人类可读（1.2s / 1m05s） */
+export function formatDuration(ms) {
+  if (ms == null) return '-'
+  const n = Number(ms)
+  if (!Number.isFinite(n) || n < 0) return '-'
+  if (n < 1000) return `${Math.round(n)}ms`
+  const totalSec = n / 1000
+  if (totalSec < 60) return `${totalSec.toFixed(1)}s`
+  const min = Math.floor(totalSec / 60)
+  const sec = Math.round(totalSec % 60)
+  return `${min}m${String(sec).padStart(2, '0')}s`
+}
+
+/** 费用：成本很小，保留 4~6 位有效数字 */
+export function formatCost(value) {
+  if (value == null) return '-'
+  const n = Number(value)
+  if (!Number.isFinite(n)) return '-'
+  if (n === 0) return '¥0'
+  if (n < 0.0001) return `¥${n.toExponential(2)}`
+  return `¥${n.toFixed(4)}`
+}
+
 /** 相对时间兜底展示（列表页 hover 提示用） */
 export function fromNow(value) {
   if (!value) return ''

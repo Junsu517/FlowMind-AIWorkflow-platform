@@ -6,7 +6,7 @@
  *   - 业务代码调用 authApi/workflowApi 的写法与真实接口模式完全一致；
  *   - 切回真实接口只需把 USE_MOCK 改成 false，一行都不用动。
  */
-import { getDb, saveDb, nextId, publicUser, publicWorkflow, iso } from './db'
+import { getDb, saveDb, nextId, publicUser, publicWorkflow, getTools, iso } from './db'
 
 const MOCK_TOKEN_PREFIX = 'mock-jwt.'
 
@@ -103,6 +103,24 @@ function issueToken(user) {
 
 function authPayload(user) {
   return { token: issueToken(user), user: publicUser(user) }
+}
+
+/** 执行记录对外结构（内部字段 snapshot/logs 不透出到 list/detail） */
+function publicExecution(e) {
+  return {
+    id: e.id,
+    workflowId: e.workflowId,
+    workflowName: e.workflowName ?? null,
+    status: e.status,
+    input: e.input,
+    output: e.output,
+    totalTokens: e.totalTokens,
+    totalCost: e.totalCost,
+    durationMs: e.durationMs,
+    errorMessage: e.errorMessage ?? null,
+    startedAt: e.startedAt,
+    finishedAt: e.finishedAt
+  }
 }
 
 function paginate(list, page, size) {
@@ -251,6 +269,171 @@ const routes = [
       db.workflows.splice(idx, 1)
       saveDb()
       return settle(config, 204, undefined)
+    }
+  },
+
+  // ---------- 图 ----------
+  {
+    method: 'get',
+    pattern: /^\/workflows\/(\d+)\/graph$/,
+    handler(config, body, match) {
+      const user = currentUser(config)
+      if (!user) return fail(config, 401, 'UNAUTHORIZED', '未登录或登录已过期')
+      const db = getDb()
+      const wf = db.workflows.find((w) => w.id === Number(match[1]))
+      if (!wf) return fail(config, 404, 'WORKFLOW_NOT_FOUND', '工作流不存在')
+      if (wf.ownerId !== user.id) return fail(config, 403, 'FORBIDDEN', '无权访问该工作流')
+      const graph = db.graphs[wf.id] || { nodes: [], edges: [] }
+      return settle(config, 200, graph)
+    }
+  },
+  {
+    method: 'put',
+    pattern: /^\/workflows\/(\d+)\/graph$/,
+    handler(config, body, match) {
+      const user = currentUser(config)
+      if (!user) return fail(config, 401, 'UNAUTHORIZED', '未登录或登录已过期')
+      const db = getDb()
+      const wf = db.workflows.find((w) => w.id === Number(match[1]))
+      if (!wf) return fail(config, 404, 'WORKFLOW_NOT_FOUND', '工作流不存在')
+      if (wf.ownerId !== user.id) return fail(config, 403, 'FORBIDDEN', '无权修改该工作流')
+
+      const nodes = Array.isArray(body.nodes) ? body.nodes : []
+      const edges = Array.isArray(body.edges) ? body.edges : []
+
+      // 图校验（与契约 v1.3 的 7 条规则对齐）
+      const keys = nodes.map((n) => n.nodeKey)
+      if (new Set(keys).size !== keys.length) {
+        return fail(config, 400, 'INVALID_GRAPH', '节点 key 必须唯一')
+      }
+      const inputs = nodes.filter((n) => n.type === 'input')
+      if (inputs.length !== 1) {
+        return fail(config, 400, 'INVALID_GRAPH', '图中必须且只能有一个 input 节点')
+      }
+      const keySet = new Set(keys)
+      for (const e of edges) {
+        if (!keySet.has(e.sourceNodeKey) || !keySet.has(e.targetNodeKey)) {
+          return fail(config, 400, 'INVALID_GRAPH', '边的两端节点必须存在')
+        }
+      }
+      const seen = new Set()
+      for (const e of edges) {
+        const sig = `${e.sourceNodeKey}>${e.targetNodeKey}>${e.sourceHandle ?? ''}`
+        if (seen.has(sig)) return fail(config, 400, 'INVALID_GRAPH', '存在重复边')
+        seen.add(sig)
+      }
+
+      db.graphs[wf.id] = { nodes, edges }
+      wf.nodeCount = nodes.length
+      wf.updatedAt = iso()
+      saveDb()
+      return settle(config, 200, { saved: true })
+    }
+  },
+
+  // ---------- 工具 ----------
+  {
+    method: 'get',
+    pattern: /^\/tools$/,
+    handler(config) {
+      if (!currentUser(config)) return fail(config, 401, 'UNAUTHORIZED', '未登录或登录已过期')
+      return settle(config, 200, { items: getTools() })
+    }
+  },
+
+  // ---------- 执行 ----------
+  {
+    method: 'post',
+    pattern: /^\/workflows\/(\d+)\/execute$/,
+    handler(config, body, match) {
+      const user = currentUser(config)
+      if (!user) return fail(config, 401, 'UNAUTHORIZED', '未登录或登录已过期')
+      const db = getDb()
+      const wf = db.workflows.find((w) => w.id === Number(match[1]))
+      if (!wf) return fail(config, 404, 'WORKFLOW_NOT_FOUND', '工作流不存在')
+      if (wf.ownerId !== user.id) return fail(config, 403, 'FORBIDDEN', '无权执行该工作流')
+
+      const graph = db.graphs[wf.id]
+      if (!graph || !graph.nodes.length) {
+        return fail(config, 400, 'INVALID_GRAPH', '工作流图为空，请先添加节点')
+      }
+      const inputNode = graph.nodes.find((n) => n.type === 'input')
+      const fields = inputNode?.config?.fields || []
+      const input = body.input || {}
+      for (const f of fields) {
+        const hasDefault = f.default !== undefined && f.default !== null && f.default !== ''
+        if (!hasDefault && (input[f.key] === undefined || input[f.key] === '')) {
+          return fail(config, 400, 'INVALID_INPUT', `缺少必填字段：${f.label || f.key}`)
+        }
+      }
+      for (const f of fields) {
+        const hasDefault = f.default !== undefined && f.default !== null && f.default !== ''
+        if (input[f.key] === undefined && hasDefault) input[f.key] = f.default
+      }
+
+      const exec = {
+        id: nextId('execution'),
+        workflowId: wf.id,
+        workflowName: wf.name,
+        status: 'running',
+        input,
+        output: {},
+        totalTokens: 0,
+        totalCost: 0,
+        durationMs: 0,
+        errorMessage: null,
+        startedAt: iso(),
+        finishedAt: null,
+        snapshot: JSON.parse(JSON.stringify(graph.nodes)),
+        logs: []
+      }
+      db.executions.unshift(exec)
+      saveDb()
+      return settle(config, 202, { executionId: exec.id })
+    }
+  },
+  {
+    method: 'get',
+    pattern: /^\/executions$/,
+    handler(config) {
+      const user = currentUser(config)
+      if (!user) return fail(config, 401, 'UNAUTHORIZED', '未登录或登录已过期')
+      const db = getDb()
+      const mine = new Set(db.workflows.filter((w) => w.ownerId === user.id).map((w) => w.id))
+      const params = config.params || {}
+      let list = db.executions.filter((e) => mine.has(e.workflowId))
+      if (params.workflowId) list = list.filter((e) => String(e.workflowId) === String(params.workflowId))
+      const page = Number(params.page) > 0 ? Number(params.page) : 1
+      const size = Math.min(Number(params.size) > 0 ? Number(params.size) : 10, 50)
+      return settle(config, 200, paginate(list.map(publicExecution), page, size))
+    }
+  },
+  {
+    method: 'get',
+    pattern: /^\/executions\/(\d+)$/,
+    handler(config, body, match) {
+      const user = currentUser(config)
+      if (!user) return fail(config, 401, 'UNAUTHORIZED', '未登录或登录已过期')
+      const db = getDb()
+      const exec = db.executions.find((e) => e.id === Number(match[1]))
+      if (!exec) return fail(config, 404, 'EXECUTION_NOT_FOUND', '执行记录不存在')
+      const wf = db.workflows.find((w) => w.id === exec.workflowId)
+      if (!wf || wf.ownerId !== user.id) return fail(config, 403, 'FORBIDDEN', '无权查看该执行记录')
+      return settle(config, 200, publicExecution(exec))
+    }
+  },
+  {
+    method: 'get',
+    pattern: /^\/executions\/(\d+)\/logs$/,
+    handler(config, body, match) {
+      const user = currentUser(config)
+      if (!user) return fail(config, 401, 'UNAUTHORIZED', '未登录或登录已过期')
+      const db = getDb()
+      const exec = db.executions.find((e) => e.id === Number(match[1]))
+      if (!exec) return fail(config, 404, 'EXECUTION_NOT_FOUND', '执行记录不存在')
+      const wf = db.workflows.find((w) => w.id === exec.workflowId)
+      if (!wf || wf.ownerId !== user.id) return fail(config, 403, 'FORBIDDEN', '无权查看该执行记录')
+      return settle(config, 200, { items: exec.logs || [], total: (exec.logs || []).length })
     }
   }
 ]

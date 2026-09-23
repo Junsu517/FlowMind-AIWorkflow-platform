@@ -162,17 +162,17 @@ public class ExecutionEngine {
             result.setOutput(output);
             result.setTokens(tokens);
             result.setStatus(NodeResult.STATUS_SUCCESS);
+            result.setDurationMs(System.currentTimeMillis() - t0);
             if (listener != null) {
                 listener.onNodeCompleted(result);
             }
         } catch (Exception ex) {
             result.setStatus(NodeResult.STATUS_FAILED);
             result.setErrorMessage(ex.getMessage());
+            result.setDurationMs(System.currentTimeMillis() - t0);
             if (listener != null) {
                 listener.onNodeFailed(result);
             }
-        } finally {
-            result.setDurationMs(System.currentTimeMillis() - t0);
         }
         return result;
     }

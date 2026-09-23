@@ -32,7 +32,8 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class LlmNodeExecutor implements NodeExecutor {
 
-    public static final String DEFAULT_MODEL = "deepseek-v4-flash";
+    /** 契约 v1.3：默认模型用规范名 deepseek-flash（旧名 deepseek-v4-flash 是服务端别名） */
+    public static final String DEFAULT_MODEL = "deepseek-flash";
     private static final long TIMEOUT_MS = 60_000L;
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
 

@@ -2,7 +2,7 @@
  * Mock 数据源：localStorage 持久化，保证刷新页面后注册/新建的数据还在。
  * 只在 USE_MOCK = true 时生效，真实接口模式下这个文件完全不参与。
  */
-const DB_KEY = 'flowmind_mock_db_v1'
+const DB_KEY = 'flowmind_mock_db_v2'
 
 function iso(minusMinutes = 0) {
   const d = new Date(Date.now() - minusMinutes * 60000)
@@ -29,7 +29,7 @@ function seed() {
         name: '天气助手',
         description: '查询城市天气并给出穿衣建议',
         status: 'draft',
-        nodeCount: 4,
+        nodeCount: 3,
         createdAt: iso(60 * 24 * 2),
         updatedAt: iso(180)
       },
@@ -54,21 +54,54 @@ function seed() {
         updatedAt: iso(20)
       }
     ],
-    idSeq: { user: 1, workflow: 3 }
+    // 图数据：{ [workflowId]: { nodes: [...], edges: [...] } }
+    graphs: {},
+    // 执行记录（契约 GET /executions/{id} 的结构）
+    executions: [],
+    idSeq: { user: 1, workflow: 3, execution: 0 }
   }
 }
 
+/** 契约：GET /api/tools 的内置工具 */
+const TOOLS = [
+  {
+    id: 1,
+    name: 'weather_query',
+    displayName: '天气查询',
+    description: '查询指定城市的实时天气情况',
+    method: 'GET',
+    paramsSchema: [{ key: 'city', label: '城市', type: 'text', required: true }]
+  },
+  {
+    id: 2,
+    name: 'hitokoto',
+    displayName: '一言',
+    description: '随机获取一句名人名言或语录',
+    method: 'GET',
+    paramsSchema: []
+  }
+]
+
 let cache = null
+
+function normalize(db) {
+  if (!db.tools) db.tools = TOOLS
+  if (!db.graphs) db.graphs = {}
+  if (!db.executions) db.executions = []
+  if (!db.idSeq) db.idSeq = { user: 1, workflow: 1, execution: 0 }
+  if (db.idSeq.execution == null) db.idSeq.execution = 0
+  return db
+}
 
 export function getDb() {
   if (cache) return cache
   try {
     const raw = localStorage.getItem(DB_KEY)
-    cache = raw ? JSON.parse(raw) : seed()
+    cache = raw ? normalize(JSON.parse(raw)) : seed()
   } catch {
     cache = seed()
   }
-  if (!cache || !cache.users || !cache.workflows || !cache.idSeq) cache = seed()
+  if (!cache || !cache.users || !cache.workflows) cache = seed()
   saveDb()
   return cache
 }
@@ -111,6 +144,10 @@ export function publicWorkflow(w) {
     createdAt: w.createdAt,
     updatedAt: w.updatedAt
   }
+}
+
+export function getTools() {
+  return TOOLS
 }
 
 export { iso }

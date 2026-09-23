@@ -41,6 +41,10 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ExecutionService {
 
+    /** execute 限流：每用户每分钟 10 次（契约 v1.3） */
+    private static final int EXECUTE_RATE_LIMIT = 10;
+    private static final int EXECUTE_RATE_WINDOW_SECONDS = 60;
+
     private final WorkflowMapper workflowMapper;
     private final WorkflowNodeMapper nodeMapper;
     private final WorkflowEdgeMapper edgeMapper;
@@ -50,6 +54,8 @@ public class ExecutionService {
     private final ExecutionPersistenceService persistenceService;
     private final ObjectMapper objectMapper;
     private final java.util.concurrent.ThreadPoolExecutor executionThreadPool;
+    private final RateLimitService rateLimitService;
+    private final SseEmitterRegistry sseRegistry;
 
     /**
      * 提交执行：校验归属/图/入参/并发限制，落 running 行后交线程池异步跑，立即返回 executionId。
@@ -62,6 +68,10 @@ public class ExecutionService {
         }
         if (!workflow.getUserId().equals(userId)) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "无权执行他人的工作流");
+        }
+        if (!rateLimitService.tryAcquire("rl:execute:" + userId,
+                EXECUTE_RATE_LIMIT, EXECUTE_RATE_WINDOW_SECONDS)) {
+            throw new BusinessException(ErrorCode.RATE_LIMITED);
         }
 
         List<WorkflowNode> nodes = nodeMapper.selectList(new LambdaQueryWrapper<WorkflowNode>()
@@ -109,9 +119,12 @@ public class ExecutionService {
 
     private void runAsync(Long executionId, List<GraphNode> nodes, List<GraphEdge> edges,
                           Map<String, Object> input) {
+        sseRegistry.send(executionId, "execution_started",
+                Map.of("executionId", executionId, "totalNodes", nodes.size()));
+        SseExecutionListener listener = new SseExecutionListener(executionId, sseRegistry);
         ExecutionReport report;
         try {
-            report = executionEngine.execute(nodes, edges, input, null);
+            report = executionEngine.execute(nodes, edges, input, listener);
         } catch (CycleException e) {
             report = failedReport(e.getMessage());
         } catch (Exception e) {
@@ -123,6 +136,16 @@ public class ExecutionService {
         } catch (Exception e) {
             log.error("执行结果落库失败 executionId={}", executionId, e);
         }
+        if (ExecutionReport.STATUS_SUCCESS.equals(report.getStatus())) {
+            sseRegistry.send(executionId, "execution_completed", Map.of(
+                    "output", report.getOutput() == null ? Map.of() : report.getOutput(),
+                    "totalTokens", report.getTotalTokens(),
+                    "durationMs", report.getDurationMs()));
+        } else {
+            sseRegistry.send(executionId, "execution_failed",
+                    Map.of("error", report.getErrorMessage() == null ? "unknown" : report.getErrorMessage()));
+        }
+        sseRegistry.complete(executionId);
     }
 
     private ExecutionReport failedReport(String errorMessage) {
@@ -199,6 +222,40 @@ public class ExecutionService {
     }
 
     // ---------------- 查询 ----------------
+
+    /**
+     * SSE 订阅：执行已结束则补发终态事件后关闭；running 则等待执行线程推送。
+     * 已知边界：DB 判定 running 与执行线程 complete 之间存在毫秒级竞态，
+     * 极端情况下订阅方会拿到已关闭的连接（结果仍可查详情，前端需兜底轮询）。
+     */
+    public org.springframework.web.servlet.mvc.method.annotation.SseEmitter stream(Long id) {
+        Execution execution = loadOwned(id);
+        org.springframework.web.servlet.mvc.method.annotation.SseEmitter emitter = sseRegistry.getOrCreate(id);
+        if (!"running".equals(execution.getStatus())) {
+            if ("success".equals(execution.getStatus())) {
+                sseRegistry.send(id, "execution_completed", Map.of(
+                        "output", readTreeOrEmpty(execution.getOutput()),
+                        "totalTokens", execution.getTotalTokens() == null ? 0 : execution.getTotalTokens(),
+                        "durationMs", execution.getDurationMs() == null ? 0L : execution.getDurationMs()));
+            } else {
+                sseRegistry.send(id, "execution_failed", Map.of(
+                        "error", execution.getErrorMessage() == null ? "unknown" : execution.getErrorMessage()));
+            }
+            sseRegistry.complete(id);
+        }
+        return emitter;
+    }
+
+    private JsonNode readTreeOrEmpty(String json) {
+        if (json == null || json.isBlank()) {
+            return objectMapper.createObjectNode();
+        }
+        try {
+            return objectMapper.readTree(json);
+        } catch (Exception e) {
+            return objectMapper.createObjectNode();
+        }
+    }
 
     public ExecutionVO get(Long id) {
         Execution execution = loadOwned(id);

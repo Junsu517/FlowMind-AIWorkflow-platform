@@ -54,6 +54,23 @@
   --accent-2-glow: rgba(34, 211, 238, 0.5);
   --focus-ring: 0 0 0 3px rgba(99, 102, 241, 0.15);
   --accent-chip-text: #b9bcf7;
+
+  /* 节点类型色（编辑器卡片徽章） */
+  --node-input: #34d399;
+  --node-llm: #818cf8;
+  --node-condition: #fbbf24;
+  --node-http: #22d3ee;
+
+  /* 执行状态色（调试面板 / 历史页徽章，视觉规范：灰蓝绿红橙） */
+  --status-pending: #8b93a7;
+  --status-running: #60a5fa;
+  --status-success: #34d399;
+  --status-failed: #f87171;
+  --status-skipped: #fb923c;
+
+  /* 代码块（token 打字机 / JSON 展示） */
+  --code-bg: rgba(6, 9, 16, 0.72);
+  --code-border: rgba(255, 255, 255, 0.07);
 }
 
 /* ---------- Element Plus 主题同步（主色 = accent-1） ---------- */
@@ -168,6 +185,22 @@ body::after {
   font-family: var(--font-mono);
   letter-spacing: 0.02em;
   font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 代码块（token 打字机 / JSON 展示） ---------- */
+.fm-code {
+  margin: 0;
+  padding: 14px 16px;
+  background: var(--code-bg);
+  border: 1px solid var(--code-border);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow: auto;
 }
 
 /* mock 模式提示徽章（USE_MOCK=true 时才出现） */

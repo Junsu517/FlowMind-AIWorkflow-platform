@@ -96,6 +96,8 @@ request.interceptors.response.use(
     if (data?.message) message = data.message
     else if (error?.message) message = error.message
     if (status === 403) message = data?.message || '没有权限执行该操作'
+    // 契约 RATE_LIMITED：execute 每用户每分钟 10 次
+    if (status === 429) message = data?.message || '操作过于频繁，请稍后再试'
     if (error?.code === 'ECONNABORTED') message = '请求超时，请检查网络或后端服务'
 
     ElMessage.error(message)
