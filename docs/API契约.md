@@ -138,7 +138,7 @@
 | type | config 结构 |
 |------|-------------|
 | input | `{ "fields": [{"key","label","type"(text/number),"default"}] }` |
-| llm | `{ "model", "prompt"(支持 {{xxx}} 模板), "temperature", "output_key" }` |
+| llm | `{ "model", "prompt"(支持 {{xxx}} 模板), "temperature", "output_key" }`；阶梯 4 新增可选字段：`"tools": [1, 2]`（tools 表 id 列表，启用 Function Calling）、`"max_tool_rounds": 3`（工具调用最大轮数，默认 3，防死循环） |
 | condition | `{ "rules": [{"left":"{{input.city}}","operator":"equals","right":"北京","handle":"beijing"}], "default_handle":"other" }`（operator 支持 equals/not_equals/contains/not_empty） |
 | http | `{ "tool_id": 1, "params": {"city":"{{input.city}}"}, "output_key": "data" }` |
 
