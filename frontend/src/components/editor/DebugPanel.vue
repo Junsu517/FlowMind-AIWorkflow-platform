@@ -134,6 +134,17 @@ watch(
   { immediate: true, deep: true }
 )
 
+/**
+ * 状态变更统一走这里：写本地状态 + 抛给父组件（画布节点状态点依赖这个事件）。
+ * SSE 解析逻辑本身不变，这里只是多了一个出口。
+ */
+const emit = defineEmits(['node-status'])
+
+function setStatus(key, status) {
+  statuses[key] = status
+  emit('node-status', key, status)
+}
+
 function statusOf(key) {
   return statuses[key] || 'pending'
 }
@@ -166,7 +177,7 @@ function scrollToBottom() {
 function resetRuntime() {
   Object.keys(statuses).forEach((k) => delete statuses[k])
   nodeList.value.forEach((n) => {
-    statuses[n.nodeKey] = 'pending'
+    setStatus(n.nodeKey, 'pending')
   })
   blocks.value = []
   errorMsg.value = ''
@@ -232,7 +243,7 @@ function handleEvent({ event, data }) {
     case 'execution_started':
       break
     case 'node_started':
-      statuses[data.nodeKey] = 'running'
+      setStatus(data.nodeKey, 'running')
       ensureBlock(data.nodeKey, data.name).thinking = true
       break
     case 'token': {
@@ -243,14 +254,14 @@ function handleEvent({ event, data }) {
       break
     }
     case 'node_completed': {
-      statuses[data.nodeKey] = 'success'
+      setStatus(data.nodeKey, 'success')
       const b = ensureBlock(data.nodeKey)
       b.thinking = false
       b.done = true
       break
     }
     case 'node_skipped':
-      statuses[data.nodeKey] = 'skipped'
+      setStatus(data.nodeKey, 'skipped')
       ensureBlock(data.nodeKey).done = true
       break
     case 'execution_completed':
@@ -303,13 +314,17 @@ async function finalizeFromServer(executionId) {
 function applyServerState(exec, logs) {
   if (logs?.items?.length) {
     for (const item of logs.items) {
-      statuses[item.nodeKey] = item.status
+      setStatus(item.nodeKey, item.status)
       const node = nodeList.value.find((n) => n.nodeKey === item.nodeKey)
       if (node && (node.type === 'llm' || node.type === 'http') && item.output) {
         const ok = node.config?.output_key || (node.type === 'llm' ? 'text' : 'data')
         const val = item.output?.[ok]
         if (val != null) {
-          const text = typeof val === 'string' ? val : JSON.stringify(val, null, 2)
+          let text = typeof val === 'string' ? val : JSON.stringify(val, null, 2)
+          // 契约 v1.4：HTTP 工具原始输出可达 10KB+，不整段渲染
+          if (node.type === 'http' && text.length > 600) {
+            text = `${text.slice(0, 600)}\n…（输出较长已截断，完整内容见执行历史）`
+          }
           const b = ensureBlock(item.nodeKey, item.nodeName)
           if (!b.text) {
             b.text = text
@@ -325,7 +340,7 @@ function applyServerState(exec, logs) {
       errorMsg.value = exec.errorMessage || '执行失败'
       // 日志里通常能定位到具体失败节点
       const failed = logs?.items?.find((i) => i.status === 'failed')
-      if (failed) statuses[failed.nodeKey] = 'failed'
+      if (failed) setStatus(failed.nodeKey, 'failed')
     }
     finish({
       status: exec.status,

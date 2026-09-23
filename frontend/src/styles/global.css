@@ -187,6 +187,137 @@ body::after {
   font-variant-numeric: tabular-nums;
 }
 
+/* ---------- 运行状态点（画布节点 / 调试面板 / 历史页通用） ---------- */
+.fm-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--status-pending);
+}
+
+.fm-dot--pending {
+  background: var(--status-pending);
+}
+
+.fm-dot--running {
+  background: var(--status-running);
+  box-shadow: 0 0 10px var(--status-running);
+  animation: fm-pulse 1.2s var(--ease) infinite;
+}
+
+.fm-dot--success {
+  background: var(--status-success);
+  box-shadow: 0 0 10px rgba(52, 211, 153, 0.6);
+}
+
+.fm-dot--failed {
+  background: var(--status-failed);
+  box-shadow: 0 0 10px rgba(248, 113, 113, 0.6);
+}
+
+.fm-dot--skipped {
+  background: var(--status-skipped);
+}
+
+@keyframes fm-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* ---------- Vue Flow 深色主题覆盖 ---------- */
+.vue-flow__node {
+  font-family: inherit;
+}
+
+.vue-flow__edge-path {
+  stroke: rgba(139, 147, 167, 0.55);
+  stroke-width: 1.8;
+  transition: stroke 0.15s var(--ease), stroke-width 0.15s var(--ease);
+}
+
+.vue-flow__edge:hover .vue-flow__edge-path,
+.vue-flow__edge.selected .vue-flow__edge-path {
+  stroke: var(--accent-1);
+  stroke-width: 2.6;
+}
+
+.vue-flow__edge {
+  animation: fm-edge-in 0.15s var(--ease);
+}
+
+@keyframes fm-edge-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* 拖拽连线时的虚线预览 */
+.vue-flow__connection-path {
+  stroke: var(--accent-2);
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+}
+
+.vue-flow__handle {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--bg-base);
+  background: var(--accent-1);
+  transition: background 0.15s var(--ease), box-shadow 0.15s var(--ease);
+}
+
+.vue-flow__handle:hover,
+.vue-flow__handle.connectionindicator:hover {
+  background: var(--accent-2);
+  box-shadow: 0 0 10px var(--accent-2-glow);
+}
+
+.vue-flow__handle-valid {
+  background: var(--status-success);
+}
+
+/* 框选区域 */
+.vue-flow__selection {
+  background: rgba(99, 102, 241, 0.08);
+  border: 1px solid var(--accent-1);
+}
+
+/* 控件（缩放/适应视图） */
+.vue-flow__controls {
+  box-shadow: none;
+  gap: 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+.vue-flow__controls-button {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--surface-glass-strong);
+  border: 1px solid var(--border-glass);
+  color: var(--text-secondary);
+  backdrop-filter: blur(12px);
+}
+
+.vue-flow__controls-button:hover {
+  background: var(--overlay-hover);
+  color: var(--text-primary);
+}
+
+.vue-flow__controls-button svg {
+  fill: currentColor;
+}
+
 /* ---------- 代码块（token 打字机 / JSON 展示） ---------- */
 .fm-code {
   margin: 0;

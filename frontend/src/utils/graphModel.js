@@ -53,7 +53,15 @@ export function defaultConfig(type) {
     case 'input':
       return { fields: [{ key: 'city', label: '城市', type: 'text', default: '' }] }
     case 'llm':
-      return { model: 'deepseek-flash', prompt: '', temperature: 0.7, output_key: 'text' }
+      // 契约 v1.4：tools（tools 表 id 列表）+ max_tool_rounds（默认 3，防死循环）为可选字段
+      return {
+        model: 'deepseek-flash',
+        prompt: '',
+        temperature: 0.7,
+        output_key: 'text',
+        tools: [],
+        max_tool_rounds: 3
+      }
     case 'condition':
       return {
         rules: [{ left: '', operator: 'equals', right: '', handle: 'branch_a' }],
@@ -76,6 +84,11 @@ function normalizeConfig(type, config = {}) {
   }
   if (type === 'llm') {
     merged.temperature = Number.isFinite(Number(config.temperature)) ? Number(config.temperature) : 0.7
+    merged.tools = Array.isArray(config.tools) ? config.tools.filter((t) => t != null) : []
+    const rounds = config.max_tool_rounds
+    merged.max_tool_rounds = rounds === '' || rounds === null || rounds === undefined
+      ? null
+      : Number(rounds)
   }
   if (type === 'condition') {
     merged.rules = Array.isArray(config.rules) && config.rules.length ? config.rules : base.rules
@@ -313,4 +326,244 @@ export function branchTemplate() {
     sources: [{ from: 'condition_1', handle: 'other' }]
   }
   return [input, condition, llmBeijing, llmOther]
+}
+
+/* ============================================================
+   画布层（阶梯 2）
+   ------------------------------------------------------------
+   只做「契约 nodes/edges ⇄ Vue Flow nodes/edges」的相互转换，
+   数据模型与接口完全不变，表单版（formToGraph/graphToForm）继续可用。
+   Vue Flow 节点：{ id, type, position, data }
+   data = { nodeKey, type, name, config, paramsRows?, status? }
+   ============================================================ */
+
+/** Vue Flow 节点类型名加前缀，避开 Vue Flow 自带的 input/output 类型 */
+export function canvasNodeType(type) {
+  return `fm-${type}`
+}
+
+function nextKeyOf(type, keys) {
+  const used = new Set(keys)
+  let i = 1
+  while (used.has(`${type}_${i}`)) i += 1
+  return `${type}_${i}`
+}
+
+export function createCanvasNode(type, canvasNodes = [], position = { x: 0, y: 0 }) {
+  const keys = canvasNodes.map((n) => n.data?.nodeKey).filter(Boolean)
+  const nodeKey = nextKeyOf(type, keys)
+  return {
+    id: nodeKey,
+    type: canvasNodeType(type),
+    position: { x: Math.round(position.x), y: Math.round(position.y) },
+    data: {
+      nodeKey,
+      type,
+      name: defaultName(type),
+      config: normalizeConfig(type, defaultConfig(type)),
+      paramsRows: type === 'http' ? [] : undefined,
+      status: 'pending'
+    }
+  }
+}
+
+/** 契约 { nodes, edges } -> Vue Flow { nodes, edges } */
+export function graphToCanvas(graph) {
+  const nodes = (Array.isArray(graph?.nodes) ? graph.nodes : []).map((n, i) => ({
+    id: n.nodeKey,
+    type: canvasNodeType(n.type),
+    position: {
+      x: Number.isFinite(Number(n.positionX)) ? Number(n.positionX) : 80 + i * 40,
+      y: Number.isFinite(Number(n.positionY)) ? Number(n.positionY) : 80 + i * 40
+    },
+    data: {
+      nodeKey: n.nodeKey,
+      type: n.type,
+      name: n.name || defaultName(n.type),
+      config: normalizeConfig(n.type, n.config),
+      paramsRows: n.type === 'http' ? paramsToRows(n.config?.params) : undefined,
+      status: 'pending'
+    }
+  }))
+
+  const edges = (Array.isArray(graph?.edges) ? graph.edges : []).map((e, i) => ({
+    id: `e-${e.sourceNodeKey}-${e.targetNodeKey}-${e.sourceHandle || 'n'}-${i}`,
+    source: e.sourceNodeKey,
+    target: e.targetNodeKey,
+    sourceHandle: e.sourceHandle || null
+  }))
+
+  return { nodes, edges }
+}
+
+/** 画布节点 -> 契约 config（http 的 params 由行转对象；llm 的可选字段按需下发） */
+function configToWire(node) {
+  const { type, config } = node.data
+  const out = { ...config }
+  if (type === 'http') {
+    out.params = rowsToParams(node.data.paramsRows)
+  }
+  if (type === 'llm') {
+    out.temperature = Number(config.temperature ?? 0.7)
+    // tools / max_tool_rounds 是契约 v1.4 的可选字段：
+    // 只有真正配置了才下发，避免影响后端尚不支持的旧链路
+    if (Array.isArray(config.tools) && config.tools.length) out.tools = config.tools
+    else delete out.tools
+    const rounds = config.max_tool_rounds
+    if (rounds === null || rounds === undefined || rounds === '') delete out.max_tool_rounds
+    else out.max_tool_rounds = Number(rounds)
+  }
+  return out
+}
+
+/** Vue Flow { nodes, edges } -> 契约 { nodes, edges } */
+export function canvasToGraph(canvasNodes, canvasEdges) {
+  const nodes = (canvasNodes || []).map((n) => ({
+    nodeKey: n.data.nodeKey,
+    type: n.data.type,
+    name: n.data.name || defaultName(n.data.type),
+    config: configToWire(n),
+    positionX: Math.round(n.position?.x ?? 0),
+    positionY: Math.round(n.position?.y ?? 0)
+  }))
+
+  const edges = []
+  const seen = new Set()
+  for (const e of canvasEdges || []) {
+    if (!e.source || !e.target) continue
+    const sig = `${e.source}>${e.target}>${e.sourceHandle || ''}`
+    if (seen.has(sig)) continue
+    seen.add(sig)
+    edges.push({
+      sourceNodeKey: e.source,
+      targetNodeKey: e.target,
+      sourceHandle: e.sourceHandle || null
+    })
+  }
+  return { nodes, edges }
+}
+
+/** 沿边往前找所有祖先节点（画布版「插入引用」用），自带环保护 */
+export function ancestorsOf(nodeKey, canvasNodes, edges) {
+  const byId = new Map((canvasNodes || []).map((n) => [n.id, n]))
+  const out = []
+  const seen = new Set()
+  const queue = [nodeKey]
+  while (queue.length) {
+    const cur = queue.shift()
+    for (const e of edges || []) {
+      if (e.target !== cur || seen.has(e.source)) continue
+      seen.add(e.source)
+      const node = byId.get(e.source)
+      if (node) {
+        out.push(node)
+        queue.push(e.source)
+      }
+    }
+  }
+  return out
+}
+
+/** 某个画布节点可以引用的上游字段（{{nodeKey.字段}}） */
+export function refsFrom(nodeKey, canvasNodes, edges) {
+  const out = []
+  for (const n of ancestorsOf(nodeKey, canvasNodes, edges)) {
+    const t = n.data?.type
+    if (t === 'input') {
+      for (const f of n.data.config?.fields || []) {
+        if (!f.key) continue
+        out.push({
+          nodeName: n.data.name,
+          label: `${n.data.name} · ${f.label || f.key}`,
+          ref: `{{${n.data.nodeKey}.${f.key}}}`
+        })
+      }
+    } else if (t === 'llm' || t === 'http') {
+      const key = n.data.config?.output_key || (t === 'llm' ? 'text' : 'data')
+      out.push({
+        nodeName: n.data.name,
+        label: `${n.data.name} · 输出（${key}）`,
+        ref: `{{${n.data.nodeKey}.${key}}}`
+      })
+    }
+  }
+  return out
+}
+
+function mkCanvasNode(nodeKey, type, name, config, x, y, paramsRows) {
+  return {
+    id: nodeKey,
+    type: canvasNodeType(type),
+    position: { x, y },
+    data: {
+      nodeKey,
+      type,
+      name,
+      config: normalizeConfig(type, config),
+      paramsRows,
+      status: 'pending'
+    }
+  }
+}
+
+/** 画布模板 1：天气助手（input → http → llm，横向排布） */
+export function weatherCanvasGraph() {
+  return {
+    nodes: [
+      mkCanvasNode('input_1', 'input', '输入', {
+        fields: [{ key: 'city', label: '城市', type: 'text', default: '南昌' }]
+      }, 60, 150),
+      mkCanvasNode(
+        'http_1',
+        'http',
+        '查天气',
+        { tool_id: 1, params: {}, output_key: 'data' },
+        360,
+        150,
+        [{ key: 'city', value: '{{input_1.city}}' }]
+      ),
+      mkCanvasNode('llm_1', 'llm', 'AI 建议', {
+        model: 'deepseek-flash',
+        prompt: '城市 {{input_1.city}} 的天气数据：{{http_1.data}}\n请给出 3 条简洁的穿衣建议，分点列出。',
+        temperature: 0.7,
+        output_key: 'text'
+      }, 660, 150)
+    ],
+    edges: [
+      { id: 'e-input_1-http_1', source: 'input_1', target: 'http_1', sourceHandle: null },
+      { id: 'e-http_1-llm_1', source: 'http_1', target: 'llm_1', sourceHandle: null }
+    ]
+  }
+}
+
+/** 画布模板 2：条件分支（input → condition → 两条 llm 分支） */
+export function branchCanvasGraph() {
+  return {
+    nodes: [
+      mkCanvasNode('input_1', 'input', '输入', {
+        fields: [{ key: 'city', label: '城市', type: 'text', default: '北京' }]
+      }, 60, 190),
+      mkCanvasNode('condition_1', 'condition', '是否北京', {
+        rules: [{ left: '{{input_1.city}}', operator: 'equals', right: '北京', handle: 'beijing' }],
+        default_handle: 'other'
+      }, 360, 190),
+      mkCanvasNode('llm_1', 'llm', '北京专属建议', {
+        model: 'deepseek-flash',
+        prompt: '用户所在城市是北京：{{input_1.city}}。请给一句北京出行提醒，不超过 30 字。',
+        temperature: 0.7,
+        output_key: 'text'
+      }, 680, 70),
+      mkCanvasNode('llm_2', 'llm', '其他城市建议', {
+        model: 'deepseek-flash',
+        prompt: '用户所在城市不是北京，而是：{{input_1.city}}。请给一句出行提醒，不超过 30 字。',
+        temperature: 0.7,
+        output_key: 'text'
+      }, 680, 320)
+    ],
+    edges: [
+      { id: 'e-input_1-condition_1', source: 'input_1', target: 'condition_1', sourceHandle: null },
+      { id: 'e-condition_1-llm_1-beijing', source: 'condition_1', target: 'llm_1', sourceHandle: 'beijing' },
+      { id: 'e-condition_1-llm_2-other', source: 'condition_1', target: 'llm_2', sourceHandle: 'other' }
+    ]
+  }
 }
