@@ -19,8 +19,14 @@
 import { USE_MOCK } from '@/api'
 import { openMockStream } from '@/api/mock/stream'
 import { getToken } from '@/utils/storage'
+import { handleSessionExpired } from '@/utils/session'
 
-const BASE = '/api'
+/**
+ * 与 src/api/index.js 的 axios baseURL 完全同款写法。
+ * 部署站挂在 /fm/ 前缀下（VITE_API_BASE=/fm/api），这里如果写死 '/api'
+ * 会把 SSE 打到别的服务上 → 404 → 每次执行都降级成轮询（线上就是这个症状）。
+ */
+const BASE = import.meta.env.VITE_API_BASE || '/api'
 
 /** 解析一个 SSE 帧（不含结尾空行） */
 function parseFrame(raw) {
@@ -51,7 +57,11 @@ function parseFrame(raw) {
  * @param {object} opts
  * @param {number|string} opts.executionId
  * @param {(evt:{event:string,data:any})=>void} opts.onEvent
- * @param {(err:any)=>void} [opts.onError]  连接不可用（HTTP 错误 / 非 event-stream / 网络异常）
+ * @param {(err:any)=>void} [opts.onError]  连接不可用。
+ *   kind='http'         —— 非 401 的 HTTP 错误（404/500…），调用方降级轮询
+ *   kind='content-type' —— 响应不是 text/event-stream
+ *   kind='network'      —— 网络异常/连接中断
+ *   kind='unauthorized' —— 401 登录过期（已统一清 token + 提示 + 跳登录，调用方只收尾、别再降级）
  * @param {()=>void} [opts.onOpen]
  * @param {()=>void} [opts.onClose]         流正常结束（连接断开不影响执行，结果已落库）
  */
@@ -92,6 +102,14 @@ export function openExecutionStream(opts) {
       const contentType = res.headers.get('content-type') || ''
       if (!res.ok) {
         const body = await safeBody(res)
+        if (res.status === 401) {
+          // 契约：401（UNAUTHORIZED / TOKEN_EXPIRED）= 登录态失效。
+          // 这种情况下轮询同样会 401，降级没有意义 → 直接按"登录过期"处理，
+          // 抛一个 kind='unauthorized' 让调用方只收尾、不显示降级提示。
+          handleSessionExpired('登录已过期，请重新登录')
+          onError?.({ kind: 'unauthorized', status: res.status, body })
+          return
+        }
         onError?.({ kind: 'http', status: res.status, body })
         return
       }

@@ -7,7 +7,7 @@
         <div>
           <h2 class="page-head__title">我的工作流</h2>
           <p class="page-head__sub">
-            共 <span class="fm-mono">{{ total }}</span> 个工作流 · 编辑器与执行能力将在后续迭代开放
+            共 <span class="fm-mono">{{ total }}</span> 个工作流 · 拖拽编排节点，保存后一键运行调试
           </p>
         </div>
         <el-button type="primary" :icon="Plus" size="large" @click="openCreate">
@@ -22,9 +22,14 @@
           </div>
           <h3 class="empty__title">还没有工作流</h3>
           <p class="empty__desc">
-            新建一个工作流，把 input、LLM、条件、HTTP 节点串成一条可运行的 AI 流程。
+            新建一个工作流，把「输入 → 工具 / 条件 → LLM」节点串成一条可以真实运行的 AI 流程。
           </p>
-          <el-button type="primary" :icon="Plus" @click="openCreate">新建工作流</el-button>
+          <el-button type="primary" :icon="Plus" size="large" @click="openCreate">
+            创建第一个工作流
+          </el-button>
+          <p class="empty__hint">
+            不确定怎么搭？新建后点工具栏的「模板」，一键载入天气助手示例。
+          </p>
         </div>
 
         <div v-else class="grid">
@@ -293,6 +298,12 @@ onMounted(load)
 .empty .el-button--primary:hover {
   box-shadow: var(--shadow-glow);
   transform: translateY(-1px);
+}
+
+.empty__hint {
+  margin: 18px 0 0;
+  font-size: 12px;
+  color: var(--text-faint);
 }
 
 .pager {

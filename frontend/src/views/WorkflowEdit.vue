@@ -18,7 +18,7 @@
 
       <div class="editor__bar-right">
         <el-dropdown trigger="click" @command="applyTemplate">
-          <el-button :icon="MagicStick">模板</el-button>
+          <el-button class="tpl-btn" :icon="MagicStick">模板</el-button>
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item command="weather">天气助手（输入 → 工具 → LLM）</el-dropdown-item>
@@ -33,6 +33,9 @@
         <el-button class="fm-btn-primary" :icon="Select" :loading="saving" @click="save">保存</el-button>
       </div>
     </div>
+
+    <!-- 首次进入编辑器的步骤引导（关掉后不再出现） -->
+    <EditorGuide v-if="showGuide" @close="dismissGuide" />
 
     <div v-loading="loading" class="editor__main">
       <NodePalette @drag-start="onPaletteDragStart" @drag-end="onPaletteDragEnd" />
@@ -108,6 +111,7 @@ import '@vue-flow/core/dist/style.css'
 import '@vue-flow/controls/dist/style.css'
 
 import AppHeader from '@/components/AppHeader.vue'
+import EditorGuide from '@/components/EditorGuide.vue'
 import NodePalette from '@/components/canvas/NodePalette.vue'
 import NodeConfigPanel from '@/components/canvas/NodeConfigPanel.vue'
 import InputNode from '@/components/canvas/nodes/InputNode.vue'
@@ -154,6 +158,19 @@ const dropActive = ref(false)
 const ready = ref(false)
 
 provide('fm-tools', tools)
+
+/** 新手引导：只在首次进入编辑器时出现，localStorage 记录「已看过」 */
+const GUIDE_KEY = 'flowmind_editor_guide_v1'
+const showGuide = ref(false)
+
+function dismissGuide() {
+  showGuide.value = false
+  try {
+    localStorage.setItem(GUIDE_KEY, '1')
+  } catch {
+    /* localStorage 不可用时忽略 */
+  }
+}
 
 const {
   nodes: flowNodes,
@@ -416,6 +433,11 @@ async function loadAll() {
 }
 
 onMounted(async () => {
+  try {
+    showGuide.value = localStorage.getItem(GUIDE_KEY) !== '1'
+  } catch {
+    showGuide.value = true
+  }
   await loadTools()
   if (!formMode.value) loadAll()
 })
@@ -473,6 +495,23 @@ watch(formMode, (isForm) => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* 模板按钮醒目化：渐变描边，让新用户第一眼看到"从模板开始"的入口 */
+.tpl-btn {
+  font-weight: 600;
+  color: var(--text-primary);
+  border: 1px solid transparent;
+  background-image: linear-gradient(var(--surface-solid), var(--surface-solid)), var(--gradient-brand);
+  background-origin: border-box;
+  background-clip: padding-box, border-box;
+  transition: box-shadow 0.2s var(--ease), transform 0.2s var(--ease);
+}
+
+.tpl-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--accent-glow-soft);
+  color: var(--text-primary);
 }
 
 .editor__main {

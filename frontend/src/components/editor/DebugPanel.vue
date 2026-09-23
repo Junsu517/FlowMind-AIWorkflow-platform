@@ -4,7 +4,7 @@
       <div class="debug__title">
         <el-icon class="debug__icon"><VideoPlay /></el-icon>
         <span>调试面板</span>
-        <span v-if="degraded" class="debug__degraded">SSE 不可用，已切换为轮询刷新</span>
+        <span v-if="degraded" class="debug__degraded">实时连接失败，已切换为轮询刷新</span>
       </div>
       <div class="debug__actions">
         <el-button v-if="!running" class="fm-btn-primary" :icon="VideoPlay" :loading="starting" @click="run">
@@ -283,7 +283,13 @@ function startStream(executionId) {
       degraded.value = false
     },
     onEvent: handleEvent,
-    onError: () => {
+    onError: (err) => {
+      // 401 登录过期：sse.js 已经清 token + 提示 + 跳登录了，这里只收尾，不再降级轮询
+      if (err?.kind === 'unauthorized') {
+        running.value = false
+        stopTimers()
+        return
+      }
       // 后端 SSE 不可用时降级：轮询执行详情 + 节点日志，保证调试面板仍然可用
       degraded.value = true
       startPolling(executionId)

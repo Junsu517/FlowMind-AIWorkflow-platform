@@ -1,7 +1,8 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import mockAdapter from './mock/adapter'
-import { getToken, clearAuth } from '@/utils/storage'
+import { getToken } from '@/utils/storage'
+import { handleSessionExpired } from '@/utils/session'
 
 /**
  * ============================================================
@@ -42,8 +43,6 @@ request.interceptors.request.use(
 const AUTH_WHITELIST = ['/auth/login', '/auth/register']
 const UNAUTHORIZED_CODES = ['UNAUTHORIZED', 'TOKEN_EXPIRED']
 
-let logoutToastShown = false
-
 function isAuthWhitelist(url = '') {
   return AUTH_WHITELIST.some((p) => String(url).includes(p))
 }
@@ -66,28 +65,8 @@ request.interceptors.response.use(
     const url = error?.config?.url || ''
 
     if (isSessionExpired(status, data?.code, url)) {
-      // 登录态失效：清 token + 跳登录页
-      clearAuth()
-      if (!logoutToastShown) {
-        logoutToastShown = true
-        ElMessage.warning('登录状态已失效，请重新登录')
-        setTimeout(() => {
-          logoutToastShown = false
-        }, 1500)
-      }
-      import('@/router')
-        .then((m) => {
-          const router = m.default
-          const current = router.currentRoute?.value
-          if (current && current.path !== '/login') {
-            router.replace({ path: '/login', query: { redirect: current.fullPath } })
-          }
-        })
-        .catch(() => {
-          if (!window.location.hash.startsWith('#/login')) {
-            window.location.hash = '#/login'
-          }
-        })
+      // 登录态失效：清 token + 提示 + 跳登录页（与 SSE 客户端共用 utils/session.js）
+      handleSessionExpired('登录状态已失效，请重新登录')
       return Promise.reject(error)
     }
 
