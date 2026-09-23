@@ -15,7 +15,7 @@ import { getToken, clearAuth } from '@/utils/storage'
 export const USE_MOCK = String(import.meta.env.VITE_USE_MOCK ?? 'true') !== 'false'
 
 const request = axios.create({
-  baseURL: '/api',
+  baseURL: import.meta.env.VITE_API_BASE || '/api',
   timeout: 15000,
   headers: { 'Content-Type': 'application/json' }
 })
