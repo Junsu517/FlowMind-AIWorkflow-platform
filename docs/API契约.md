@@ -177,6 +177,8 @@ event: execution_failed    data: {"error":"节点 llm_1 调用超时"}
   "errorMessage": null, "startedAt": "...", "finishedAt": "..." }
 错误: 404 EXECUTION_NOT_FOUND
 ```
+> `output` 结构（2026-09-23 裁决）：包含 `"input"`（原始入参副本，供模板 `{{input.xxx}}` 引用，不依赖 input 节点的 key）**加**各节点的输出（key = nodeKey）。前端展示时注意会有重复内容。
+> `execution_completed` SSE 事件**不含 totalCost**（契约如此），费用由前端拉取执行详情接口补充；二期可优化。
 > `workflowName` 在工作流被删除后为 **null**（执行历史保留，名称不冗余存储）；前端对 null 显示"已删除的工作流"。
 
 ### GET /api/executions/{id}/logs
