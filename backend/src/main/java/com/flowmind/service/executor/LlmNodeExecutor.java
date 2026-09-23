@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.flowmind.engine.ExecutorResult;
 import com.flowmind.engine.NodeExecutionContext;
 import com.flowmind.engine.NodeExecutor;
+import com.flowmind.entity.Tool;
+import com.flowmind.mapper.ToolMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.MediaType;
@@ -20,12 +22,17 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 
 /**
- * LLM 节点执行器：DeepSeek chat/completions 流式调用，
- * 逐 delta 回调 tokenSink，完整文本与 usage 总 token 数随 ExecutorResult 返回。
+ * LLM 节点执行器。
+ * 无 tools 配置：单轮 DeepSeek 流式调用，delta 实时推 tokenSink。
+ * 有 tools 配置（契约 v1.4）：代理循环——模型请求工具 → 执行（HttpToolInvoker）→ 结果回填 → 再问，
+ * 直到模型给出最终文本或达到 max_tool_rounds 截断。仅最终轮 content 推 tokenSink（缓冲后重放，保打字机效果）。
  */
 @Slf4j
 @Component
@@ -34,6 +41,7 @@ public class LlmNodeExecutor implements NodeExecutor {
 
     /** 契约 v1.3：默认模型用规范名 deepseek-flash（旧名 deepseek-v4-flash 是服务端别名） */
     public static final String DEFAULT_MODEL = "deepseek-flash";
+    static final int DEFAULT_MAX_TOOL_ROUNDS = 3;
     private static final long TIMEOUT_MS = 60_000L;
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
 
@@ -43,6 +51,8 @@ public class LlmNodeExecutor implements NodeExecutor {
     @Value("${deepseek.api-key}")
     private String apiKey;
 
+    private final ToolMapper toolMapper;
+    private final HttpToolInvoker httpToolInvoker;
     private final ObjectMapper objectMapper;
 
     private final OkHttpClient client = new OkHttpClient.Builder()
@@ -69,14 +79,120 @@ public class LlmNodeExecutor implements NodeExecutor {
             throw new IllegalStateException("DEEPSEEK_API_KEY 未配置，无法调用 LLM 节点: " + ctx.getNodeKey());
         }
 
+        List<Tool> tools = loadTools(config.get("tools"));
+        if (tools.isEmpty()) {
+            return executeSingle(ctx, model, prompt, outputKey, config.get("temperature"));
+        }
+        int maxRounds = maxToolRounds(config.get("max_tool_rounds"));
+        return executeWithTools(ctx, model, prompt, outputKey, config.get("temperature"), tools, maxRounds);
+    }
+
+    // ---------------- 单轮（无 Function Calling，阶梯 1 原路径） ----------------
+
+    private ExecutorResult executeSingle(NodeExecutionContext ctx, String model, String prompt,
+                                         String outputKey, Object temperature) {
+        List<Map<String, Object>> messages = new ArrayList<>();
+        messages.add(Map.of("role", "user", "content", prompt));
+        ChatRound round = callChatStream(model, temperature, messages, null, true, ctx.getTokenSink());
+        return new ExecutorResult(Map.of(outputKey, round.content()), round.tokens());
+    }
+
+    // ---------------- Function Calling 代理循环（阶梯 4） ----------------
+
+    private ExecutorResult executeWithTools(NodeExecutionContext ctx, String model, String prompt,
+                                            String outputKey, Object temperature,
+                                            List<Tool> tools, int maxRounds) {
+        List<Map<String, Object>> toolsParam = buildToolsParam(tools);
+        Map<String, Tool> toolByName = new LinkedHashMap<>();
+        tools.forEach(t -> toolByName.put(t.getName(), t));
+
+        List<Map<String, Object>> messages = new ArrayList<>();
+        messages.add(Map.of("role", "user", "content", prompt));
+
+        int totalTokens = 0;
+        List<Map<String, Object>> toolCallLog = new ArrayList<>();
+
+        for (int round = 1; round <= maxRounds; round++) {
+            ChatRound result = callChatStream(model, temperature, messages, toolsParam, false, null);
+            totalTokens += result.tokens();
+
+            if (result.toolCalls().isEmpty()) {
+                // 最终轮：重放 content 增量到 tokenSink
+                result.contentDeltas().forEach(ctx.getTokenSink()::accept);
+                return buildResult(outputKey, result.content(), totalTokens, toolCallLog);
+            }
+
+            // 回填 assistant 消息（含 tool_calls），再逐个执行工具并回填 tool 消息
+            messages.add(assistantToolCallMessage(result.toolCalls()));
+            for (ToolCall call : result.toolCalls()) {
+                long start = System.currentTimeMillis();
+                Map<String, Object> args = parseArguments(call.arguments());
+                Map<String, Object> toolResult = executeToolSafely(toolByName.get(call.name()), call.name(), args);
+                long durationMs = System.currentTimeMillis() - start;
+                toolCallLog.add(toolCallLogEntry(call, args, toolResult, durationMs, round));
+                messages.add(toolResultMessage(call.id(), toolResult));
+            }
+        }
+
+        log.warn("llm 节点达到最大工具调用轮数后模型仍请求工具，强制截断: nodeKey={}, rounds={}",
+                ctx.getNodeKey(), maxRounds);
+        String truncated = "[已达到最大工具调用轮数 " + maxRounds + "，执行被截断]";
+        return buildResult(outputKey, truncated, totalTokens, toolCallLog);
+    }
+
+    /** 工具执行失败不 fail 节点：错误信息回填给模型自行决策（任务卡要求）。 */
+    private Map<String, Object> executeToolSafely(Tool tool, String name, Map<String, Object> args) {
+        if (tool == null) {
+            return Map.of("error", "未知工具: " + name);
+        }
+        try {
+            return httpToolInvoker.invoke(tool, args);
+        } catch (Exception e) {
+            return Map.of("error", e.getMessage() == null ? "工具调用失败" : e.getMessage());
+        }
+    }
+
+    private Map<String, Object> toolCallLogEntry(ToolCall call, Map<String, Object> args,
+                                                 Map<String, Object> toolResult,
+                                                 long durationMs, int round) {
+        Map<String, Object> entry = new LinkedHashMap<>();
+        entry.put("toolName", call.name());
+        entry.put("arguments", args);
+        entry.put("durationMs", durationMs);
+        entry.put("round", round);
+        entry.put("ok", !toolResult.containsKey("error"));
+        return entry;
+    }
+
+    private ExecutorResult buildResult(String outputKey, String content, int totalTokens,
+                                       List<Map<String, Object>> toolCallLog) {
+        Map<String, Object> output = new LinkedHashMap<>();
+        output.put(outputKey, content);
+        output.put("tool_calls", toolCallLog);
+        return new ExecutorResult(output, totalTokens);
+    }
+
+    // ---------------- DeepSeek 流式调用与解析 ----------------
+
+    /**
+     * 发起一次流式 chat 请求并解析：content 增量、tool_calls 分片、usage、finish_reason。
+     * pushDeltas=true 时 content 增量实时推 sink（单轮路径）；false 时缓冲在 contentDeltas（FC 路径轮末判断后重放）。
+     */
+    private ChatRound callChatStream(String model, Object temperature,
+                                     List<Map<String, Object>> messages,
+                                     List<Map<String, Object>> toolsParam,
+                                     boolean pushDeltas, java.util.function.Consumer<String> sink) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", model);
-        body.put("messages", new Object[]{Map.of("role", "user", "content", prompt)});
+        body.put("messages", messages);
         body.put("stream", true);
         body.put("stream_options", Map.of("include_usage", true));
-        Object temperature = config.get("temperature");
         if (temperature instanceof Number number) {
             body.put("temperature", number.doubleValue());
+        }
+        if (toolsParam != null && !toolsParam.isEmpty()) {
+            body.put("tools", toolsParam);
+            body.put("tool_choice", "auto");
         }
 
         Request request = new Request.Builder()
@@ -91,17 +207,20 @@ public class LlmNodeExecutor implements NodeExecutor {
                 throw new IllegalStateException("DeepSeek 调用失败 HTTP " + response.code()
                         + ": " + truncate(err, 200));
             }
-            return readStream(response, ctx, outputKey);
+            return readStream(response, pushDeltas, sink);
         } catch (IOException e) {
             throw new IllegalStateException("DeepSeek 调用异常（60s 超时或网络错误）: " + e.getMessage(), e);
         }
     }
 
     /** 解析 SSE 流：按行缓冲避免分片截断，data: [DONE] 结束。 */
-    private ExecutorResult readStream(Response response, NodeExecutionContext ctx, String outputKey)
+    private ChatRound readStream(Response response, boolean pushDeltas, java.util.function.Consumer<String> sink)
             throws IOException {
-        StringBuilder full = new StringBuilder();
+        StringBuilder content = new StringBuilder();
+        List<String> contentDeltas = new ArrayList<>();
+        Map<Integer, ToolCallBuilder> toolCallBuilders = new TreeMap<>();
         Integer totalTokens = null;
+
         try (BufferedReader reader = new BufferedReader(
                 new InputStreamReader(response.body().byteStream(), StandardCharsets.UTF_8))) {
             String line;
@@ -117,19 +236,185 @@ public class LlmNodeExecutor implements NodeExecutor {
                     break;
                 }
                 JsonNode chunk = objectMapper.readTree(payload);
-                JsonNode delta = chunk.path("choices").path(0).path("delta").path("content");
+                JsonNode choice = chunk.path("choices").path(0);
+
+                JsonNode delta = choice.path("delta").path("content");
                 if (delta.isTextual() && !delta.asText().isEmpty()) {
-                    full.append(delta.asText());
-                    ctx.getTokenSink().accept(delta.asText());
+                    content.append(delta.asText());
+                    if (pushDeltas) {
+                        sink.accept(delta.asText());
+                    } else {
+                        contentDeltas.add(delta.asText());
+                    }
                 }
+
+                // tool_calls 分片：index 区分并行调用，name 首片携带，arguments 逐片拼接
+                JsonNode toolCallDeltas = choice.path("delta").path("tool_calls");
+                if (toolCallDeltas.isArray()) {
+                    for (JsonNode tc : toolCallDeltas) {
+                        ToolCallBuilder builder = toolCallBuilders
+                                .computeIfAbsent(tc.path("index").asInt(), ToolCallBuilder::new);
+                        if (tc.hasNonNull("id")) {
+                            builder.id = tc.get("id").asText();
+                        }
+                        JsonNode fn = tc.path("function");
+                        if (fn.hasNonNull("name")) {
+                            builder.name = fn.get("name").asText();
+                        }
+                        if (fn.hasNonNull("arguments")) {
+                            builder.arguments.append(fn.get("arguments").asText());
+                        }
+                    }
+                }
+
                 JsonNode usage = chunk.path("usage");
                 if (usage.isObject() && usage.hasNonNull("total_tokens")) {
                     totalTokens = usage.get("total_tokens").asInt();
                 }
             }
         }
-        return new ExecutorResult(Map.of(outputKey, full.toString()), totalTokens == null ? 0 : totalTokens);
+
+        List<ToolCall> toolCalls = toolCallBuilders.values().stream()
+                .map(ToolCallBuilder::build)
+                .toList();
+        return new ChatRound(content.toString(), contentDeltas, toolCalls,
+                totalTokens == null ? 0 : totalTokens);
     }
+
+    // ---------------- tools 参数构造 ----------------
+
+    private List<Tool> loadTools(Object toolsConfig) {
+        if (!(toolsConfig instanceof List<?> ids) || ids.isEmpty()) {
+            return List.of();
+        }
+        List<Long> toolIds = ids.stream()
+                .filter(Number.class::isInstance)
+                .map(v -> ((Number) v).longValue())
+                .toList();
+        if (toolIds.isEmpty()) {
+            return List.of();
+        }
+        return toolMapper.selectBatchIds(toolIds).stream()
+                .filter(t -> t.getEnabled() != null && t.getEnabled() == 1)
+                .toList();
+    }
+
+    private int maxToolRounds(Object configValue) {
+        if (configValue instanceof Number number && number.intValue() >= 1) {
+            return Math.min(number.intValue(), 10);
+        }
+        return DEFAULT_MAX_TOOL_ROUNDS;
+    }
+
+    /** OpenAI 兼容 tools 参数：params_schema（JSON 数组）→ JSON Schema object。 */
+    List<Map<String, Object>> buildToolsParam(List<Tool> tools) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Tool tool : tools) {
+            Map<String, Object> function = new LinkedHashMap<>();
+            function.put("name", tool.getName());
+            function.put("description", tool.getDescription() == null ? "" : tool.getDescription());
+            function.put("parameters", toFunctionParameters(tool.getParamsSchema()));
+            result.add(Map.of("type", "function", "function", function));
+        }
+        return result;
+    }
+
+    private Map<String, Object> toFunctionParameters(String paramsSchemaJson) {
+        Map<String, Object> properties = new LinkedHashMap<>();
+        List<String> required = new ArrayList<>();
+        if (paramsSchemaJson != null && !paramsSchemaJson.isBlank()) {
+            try {
+                JsonNode fields = objectMapper.readTree(paramsSchemaJson);
+                if (fields.isArray()) {
+                    for (JsonNode field : fields) {
+                        String key = field.path("key").asText();
+                        if (key.isEmpty()) {
+                            continue;
+                        }
+                        Map<String, Object> property = new LinkedHashMap<>();
+                        property.put("type", "number".equals(field.path("type").asText()) ? "number" : "string");
+                        property.put("description", field.path("label").asText(""));
+                        properties.put(key, property);
+                        if (field.path("required").asBoolean(false)) {
+                            required.add(key);
+                        }
+                    }
+                }
+            } catch (IOException e) {
+                log.warn("params_schema 解析失败，按无参工具处理: {}", e.getMessage());
+            }
+        }
+        Map<String, Object> parameters = new LinkedHashMap<>();
+        parameters.put("type", "object");
+        parameters.put("properties", properties);
+        if (!required.isEmpty()) {
+            parameters.put("required", required);
+        }
+        return parameters;
+    }
+
+    private Map<String, Object> assistantToolCallMessage(List<ToolCall> toolCalls) {
+        List<Map<String, Object>> calls = new ArrayList<>();
+        for (ToolCall call : toolCalls) {
+            calls.add(Map.of(
+                    "id", call.id(),
+                    "type", "function",
+                    "function", Map.of("name", call.name(), "arguments", call.arguments())));
+        }
+        Map<String, Object> message = new LinkedHashMap<>();
+        message.put("role", "assistant");
+        message.put("content", "");
+        message.put("tool_calls", calls);
+        return message;
+    }
+
+    private Map<String, Object> toolResultMessage(String toolCallId, Map<String, Object> toolResult) {
+        Map<String, Object> message = new LinkedHashMap<>();
+        message.put("role", "tool");
+        message.put("tool_call_id", toolCallId);
+        message.put("content", toJson(toolResult));
+        return message;
+    }
+
+    private Map<String, Object> parseArguments(String argumentsJson) {
+        if (argumentsJson == null || argumentsJson.isBlank()) {
+            return Map.of();
+        }
+        try {
+            return objectMapper.readValue(argumentsJson,
+                    new com.fasterxml.jackson.core.type.TypeReference<LinkedHashMap<String, Object>>() {
+                    });
+        } catch (IOException e) {
+            return Map.of("_rawArguments", argumentsJson);
+        }
+    }
+
+    // ---------------- 内部模型 ----------------
+
+    /** 一轮流式调用的解析结果。 */
+    private record ChatRound(String content, List<String> contentDeltas,
+                             List<ToolCall> toolCalls, int tokens) {
+    }
+
+    record ToolCall(String id, String name, String arguments) {
+    }
+
+    private static class ToolCallBuilder {
+        final int index;
+        String id = "";
+        String name = "";
+        final StringBuilder arguments = new StringBuilder();
+
+        ToolCallBuilder(int index) {
+            this.index = index;
+        }
+
+        ToolCall build() {
+            return new ToolCall(id, name, arguments.toString());
+        }
+    }
+
+    // ---------------- 工具方法 ----------------
 
     private String toJson(Object value) {
         try {

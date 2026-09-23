@@ -138,7 +138,7 @@
 | type | config 结构 |
 |------|-------------|
 | input | `{ "fields": [{"key","label","type"(text/number),"default"}] }` |
-| llm | `{ "model", "prompt"(支持 {{xxx}} 模板), "temperature", "output_key" }`；阶梯 4 新增可选字段：`"tools": [1, 2]`（tools 表 id 列表，启用 Function Calling）、`"max_tool_rounds": 3`（工具调用最大轮数，默认 3，防死循环） |
+| llm | `{ "model", "prompt"(支持 {{xxx}} 模板), "temperature", "output_key" }`；阶梯 4 新增可选字段：`"tools": [1, 2]`（tools 表 id 列表，启用 Function Calling）、`"max_tool_rounds": 3`（工具调用最大轮数，默认 3，防死循环；**上限 10，超限钳到 10**）。配置了 tools 时 output 额外含 `"tool_calls"` 数组（每项 toolName/arguments/ok/durationMs/round）；无 tools 走单轮路径，行为不变 |
 | condition | `{ "rules": [{"left":"{{input.city}}","operator":"equals","right":"北京","handle":"beijing"}], "default_handle":"other" }`（operator 支持 equals/not_equals/contains/not_empty） |
 | http | `{ "tool_id": 1, "params": {"city":"{{input.city}}"}, "output_key": "data" }` |
 
@@ -167,6 +167,13 @@ event: node_skipped        data: {"nodeKey":"http_2","reason":"条件分支未�
 event: execution_completed data: {"output":{"llm_1":{"text":"..."}},"totalTokens":1234,"durationMs":5210}
 event: execution_failed    data: {"error":"节点 llm_1 调用超时"}
 ```
+
+> **阶梯 4 Function Calling 裁决（2026-09-23，GLM 实测上报）**：
+> - **DeepSeek tools 兼容性**：deepseek-flash 完整接受 OpenAI 格式（tools + tool_choice=auto），流式 tool_calls 按 index 分片、arguments 逐片拼接，无严格校验问题
+> - **仅最终轮 content 推 tokenSink**：中间轮 content 缓冲不推（实测中间轮只有 reasoning_content、content 为空）；最终轮完成后重放增量，保打字机效果
+> - **截断语义**：达到 max_tool_rounds 模型仍请求工具 → 节点 status=success，output 文本为"已达到最大工具调用轮数 N，执行被截断"，tool_calls 日志恰好 N 条。真实 v4 模型会识破"无限循环"指令自行终止（生产中死循环风险低），截断逻辑用 MockWebServer 确定性测试覆盖
+> - **工具失败不回填失败**：工具超时/非 200 时把 `{"error":"..."}` 作为 tool 消息回填，由模型自行决策，不 fail 节点
+> - **已知边界**：极端配置（10 轮 × 60s LLM）可能逼近 SSE emitter 5 分钟超时，前端有轮询兜底；工具结果全量回填（如 wttr.in ~10KB）消耗上下文，截断策略留待后续优化
 规则：每次事件以空行分隔；连接断开不影响执行（执行结果落库，可查详情）。
 
 ### GET /api/executions/{id}
