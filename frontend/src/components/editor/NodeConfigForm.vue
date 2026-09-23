@@ -7,8 +7,8 @@
         <span class="block-title__hint">未填默认值的字段在运行时为必填</span>
       </div>
       <div v-for="(f, i) in node.config.fields" :key="`field-${i}`" class="kv-row">
-        <el-input v-model="f.key" placeholder="key（如 city）" class="kv-row__k" />
-        <el-input v-model="f.label" placeholder="显示名" class="kv-row__k" />
+        <el-input v-model="f.key" placeholder="参数名称（如 city）" class="kv-row__k" />
+        <el-input v-model="f.label" placeholder="显示名（如 城市）" class="kv-row__k" />
         <el-select v-model="f.type" class="kv-row__t">
           <el-option label="文本" value="text" />
           <el-option label="数字" value="number" />
@@ -76,6 +76,9 @@
         <span class="field__label">
           温度 temperature
           <span class="fm-mono temp-value">{{ Number(node.config.temperature).toFixed(2) }}</span>
+          <el-tooltip placement="top" content="控制输出随机性（0~1）：越高越有创意、越不稳定；越低越保守、越稳定。默认 0.7">
+            <el-icon class="field__help"><QuestionFilled /></el-icon>
+          </el-tooltip>
         </span>
         <el-slider v-model="node.config.temperature" :min="0" :max="1" :step="0.1" show-stops />
       </label>
@@ -109,7 +112,13 @@
         <label class="field">
           <span class="field__label">
             最大工具轮数 max_tool_rounds
-            <span class="field__hint">默认 3，留空则用后端默认</span>
+            <el-tooltip
+              placement="top"
+              content="模型最多调用几轮工具，达到后强制结束（防死循环）。默认 3，仅在使用工具时生效"
+            >
+              <el-icon class="field__help"><QuestionFilled /></el-icon>
+            </el-tooltip>
+            <span class="field__hint">默认 3，留空则用后端默认；未勾选工具时不生效</span>
           </span>
           <el-input-number
             v-model="node.config.max_tool_rounds"
@@ -117,6 +126,7 @@
             :min="1"
             :max="10"
             :step="1"
+            :disabled="!hasTools"
             controls-position="right"
             placeholder="3"
           />
@@ -234,8 +244,8 @@
 </template>
 
 <script setup>
-import { computed, nextTick, ref } from 'vue'
-import { Plus, Remove, Aim } from '@element-plus/icons-vue'
+import { computed, nextTick, ref, watch } from 'vue'
+import { Plus, Remove, Aim, QuestionFilled } from '@element-plus/icons-vue'
 import { LLM_MODELS, CONDITION_OPERATORS } from '@/utils/graphModel'
 
 /**
@@ -253,6 +263,13 @@ const props = defineProps({
 const promptRef = ref(null)
 
 const selectedTool = computed(() => props.tools.find((t) => t.id === props.node.config.tool_id) || null)
+
+/** 没勾工具时 max_tool_rounds 不生效（灰置）；清空工具时把轮数一起清掉，避免存了无效配置 */
+const hasTools = computed(() => (props.node.config.tools || []).length > 0)
+
+watch(hasTools, (has) => {
+  if (!has && props.node.type === 'llm') props.node.config.max_tool_rounds = null
+})
 
 /** 选中工具后，按 paramsSchema 预填参数名 */
 function onToolChange(toolId) {
@@ -388,6 +405,19 @@ function insertRef(text) {
   margin-top: 2px;
   font-size: 11px;
   color: var(--text-faint);
+}
+
+.field__help {
+  margin-left: 4px;
+  font-size: 12px;
+  color: var(--text-faint);
+  cursor: help;
+  vertical-align: -1px;
+  transition: color 0.2s var(--ease);
+}
+
+.field__help:hover {
+  color: var(--accent-2);
 }
 
 .field__control {

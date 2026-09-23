@@ -23,14 +23,17 @@ export function formatDuration(ms) {
   return `${min}m${String(sec).padStart(2, '0')}s`
 }
 
-/** 费用：成本很小，保留 4~6 位有效数字 */
+/**
+ * 费用：全站统一（执行历史列表 / 详情抽屉 / 调试面板统计条都走这一个函数）
+ * 规则：$ + 最多 4 位小数（0.001923456 → $0.0019），0 显示 $0，极小值走科学计数法
+ */
 export function formatCost(value) {
   if (value == null) return '-'
   const n = Number(value)
   if (!Number.isFinite(n)) return '-'
-  if (n === 0) return '¥0'
-  if (n < 0.0001) return `¥${n.toExponential(2)}`
-  return `¥${n.toFixed(4)}`
+  if (n === 0) return '$0'
+  if (n > 0 && n < 0.0001) return `$${n.toExponential(2)}`
+  return `$${Number(n.toFixed(4))}`
 }
 
 /** 相对时间兜底展示（列表页 hover 提示用） */

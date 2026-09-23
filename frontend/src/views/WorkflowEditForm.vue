@@ -108,6 +108,14 @@ watch(name, () => {
   if (ready.value) dirty.value = true
 })
 
+/** input 字段的显示名没填时用参数名兜底，运行时表单至少有可读的名字 */
+function applyInputLabelFallback(nodes) {
+  for (const n of nodes) {
+    if (n.type !== 'input') continue
+    n.config.fields = (n.config.fields || []).map((f) => ({ ...f, label: f.label || f.key }))
+  }
+}
+
 /** 保存前的本地校验，尽量把 INVALID_GRAPH 挡在前端 */
 function localValidate() {
   const list = nodes.value
@@ -128,7 +136,9 @@ function localValidate() {
     if (n.type === 'input') {
       const fields = n.config.fields || []
       if (!fields.length) return 'input 节点至少需要一个入参字段'
-      if (fields.some((f) => !f.key)) return 'input 字段 key 不能为空'
+      if (fields.some((f) => !String(f.key || '').trim())) {
+        return `节点「${n.name}」的入参字段还没填参数名称（key）`
+      }
       if (new Set(fields.map((f) => f.key)).size !== fields.length) return 'input 字段 key 必须唯一'
     }
     if (n.type === 'llm' && !String(n.config.prompt || '').trim()) {
@@ -158,7 +168,9 @@ async function save() {
       originName.value = wf.name ?? trimmed
       name.value = originName.value
     }
-    await saveGraph(id.value, formToGraph(nodes.value))
+    const graph = formToGraph(nodes.value)
+    applyInputLabelFallback(graph.nodes)
+    await saveGraph(id.value, graph)
     dirty.value = false
     ElMessage.success('图已保存')
   } catch (e) {

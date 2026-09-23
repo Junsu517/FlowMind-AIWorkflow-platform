@@ -12,9 +12,11 @@ import com.flowmind.dto.auth.UserVO;
 import com.flowmind.entity.User;
 import com.flowmind.mapper.UserMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AuthService {
@@ -24,6 +26,7 @@ public class AuthService {
 
     private final UserMapper userMapper;
     private final JwtUtil jwtUtil;
+    private final DemoWorkflowService demoWorkflowService;
 
     public AuthResponse register(RegisterRequest req) {
         Long exists = userMapper.selectCount(
@@ -36,6 +39,12 @@ public class AuthService {
         user.setPasswordHash(PASSWORD_ENCODER.encode(req.getPassword()));
         user.setEmail(req.getEmail() == null ? "" : req.getEmail());
         userMapper.insert(user);
+        // 注册即送示例工作流；创建失败不影响注册本身
+        try {
+            demoWorkflowService.createDemoWorkflowFor(user.getId());
+        } catch (Exception e) {
+            log.warn("示例工作流创建失败（注册不受影响）: userId={}, {}", user.getId(), e.getMessage());
+        }
         // role/status/createdAt 由数据库默认值生成，回读一次
         User dbUser = userMapper.selectById(user.getId());
         return new AuthResponse(jwtUtil.generate(dbUser.getId(), dbUser.getRole()), toVO(dbUser));

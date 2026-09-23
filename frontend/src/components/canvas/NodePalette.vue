@@ -17,7 +17,7 @@
       <span class="palette__badge">{{ NODE_TYPE_META[t].short }}</span>
       <div class="palette__text">
         <div class="palette__name">{{ NODE_TYPE_META[t].label }}</div>
-        <div class="palette__desc">{{ NODE_TYPE_META[t].desc }}</div>
+        <div class="palette__desc">{{ PURPOSE[t] }}</div>
       </div>
       <el-icon class="palette__grip"><Rank /></el-icon>
     </div>
@@ -32,6 +32,17 @@
 import { ref } from 'vue'
 import { Rank } from '@element-plus/icons-vue'
 import { NODE_TYPES, NODE_TYPE_META } from '@/utils/graphModel'
+
+/**
+ * 节点用途说明（新手向）。
+ * 文案刻意放在面板本地：graphModel.js 本轮是禁区，只准改 defaultConfig('input')。
+ */
+const PURPOSE = {
+  input: '接收用户填写的参数',
+  llm: '调用 AI 生成文本（支持工具调用）',
+  http: '调用外部 API（如天气查询）',
+  condition: '按条件选择走哪条分支'
+}
 
 const emit = defineEmits(['drag-start', 'drag-end'])
 
@@ -54,7 +65,7 @@ function onDragEnd() {
 <style scoped>
 .palette {
   flex: none;
-  width: 216px;
+  width: 232px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -144,12 +155,10 @@ function onDragEnd() {
 }
 
 .palette__desc {
-  margin-top: 1px;
-  font-size: 10.5px;
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.45;
   color: var(--text-faint);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .palette__grip {

@@ -51,7 +51,8 @@ export function defaultName(type) {
 export function defaultConfig(type) {
   switch (type) {
     case 'input':
-      return { fields: [{ key: 'city', label: '城市', type: 'text', default: '' }] }
+      // 默认一行空字段：预填 city/城市 会把 placeholder 盖住，新手反而不知道要填什么
+      return { fields: [{ key: '', label: '', type: 'text', default: '' }] }
     case 'llm':
       // 契约 v1.4：tools（tools 表 id 列表）+ max_tool_rounds（默认 3，防死循环）为可选字段
       return {

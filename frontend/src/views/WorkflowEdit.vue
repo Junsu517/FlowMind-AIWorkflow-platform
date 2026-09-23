@@ -42,7 +42,7 @@
 
       <div
         class="canvas"
-        :class="{ 'is-drop-target': dropActive }"
+        :class="{ 'is-drop-target': dropActive, 'is-connecting': connecting }"
         @dragover.prevent="onDragOver"
         @dragleave="onDragLeave"
         @drop="onDrop"
@@ -55,6 +55,8 @@
           :delete-key-code="null"
           :connect-on-click="false"
           :elevate-edges-on-select="true"
+          :connection-mode="ConnectionMode.Loose"
+          :connection-radius="36"
         >
           <template #node-fm-input="props"><InputNode v-bind="props" /></template>
           <template #node-fm-llm="props"><LlmNode v-bind="props" /></template>
@@ -104,7 +106,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, ArrowDown, Select, MagicStick, Clock, VideoPlay } from '@element-plus/icons-vue'
 import { Grid as GridIcon, List as ListIcon } from '@element-plus/icons-vue'
-import { VueFlow, useVueFlow } from '@vue-flow/core'
+import { VueFlow, useVueFlow, ConnectionMode } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
 import '@vue-flow/core/dist/style.css'
@@ -182,11 +184,22 @@ const {
   setNodes,
   setEdges,
   onConnect,
+  onConnectStart,
+  onConnectEnd,
   onNodeClick,
   onPaneClick,
   screenToFlowCoordinate,
   fitView
 } = useVueFlow()
+
+/** 正在拖连线：此时把目标 handle 的热区撑满整个节点（见 global.css 的 .is-connecting） */
+const connecting = ref(false)
+onConnectStart(() => {
+  connecting.value = true
+})
+onConnectEnd(() => {
+  connecting.value = false
+})
 
 // ---------- 脏标记 ----------
 watch(
@@ -304,6 +317,14 @@ function pruneStaleEdges() {
   return stale.length
 }
 
+/** input 字段的显示名没填时用参数名兜底，运行时表单至少有可读的名字 */
+function applyInputLabelFallback(nodes) {
+  for (const n of nodes) {
+    if (n.type !== 'input') continue
+    n.config.fields = (n.config.fields || []).map((f) => ({ ...f, label: f.label || f.key }))
+  }
+}
+
 function localValidate() {
   const ns = flowNodes.value
   if (!ns.length) return '画布上还没有节点，先从左侧拖入一个'
@@ -320,7 +341,9 @@ function localValidate() {
     if (type === 'input') {
       if (inDegree) return 'input 节点不能有上游连线'
       if (!(config.fields || []).length) return 'input 节点至少需要一个入参字段'
-      if (config.fields.some((f) => !f.key)) return 'input 字段 key 不能为空'
+      if (config.fields.some((f) => !String(f.key || '').trim())) {
+        return `节点「${n.data.name}」的入参字段还没填参数名称（key）`
+      }
       if (new Set(config.fields.map((f) => f.key)).size !== config.fields.length) {
         return 'input 字段 key 必须唯一'
       }
@@ -357,7 +380,9 @@ async function save() {
       originName.value = wf.name ?? trimmed
       name.value = originName.value
     }
-    await saveGraph(id.value, canvasToGraph(flowNodes.value, flowEdges.value))
+    const graph = canvasToGraph(flowNodes.value, flowEdges.value)
+    applyInputLabelFallback(graph.nodes)
+    await saveGraph(id.value, graph)
     dirty.value = false
     ElMessage.success('图已保存')
   } catch (e) {

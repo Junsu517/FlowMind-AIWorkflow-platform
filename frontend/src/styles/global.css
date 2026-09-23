@@ -267,18 +267,40 @@ body::after {
   stroke-dasharray: 6 4;
 }
 
+/* 视觉 12px 圆点，但热区通过 ::after 扩到 ~26px，避免"很难点" */
 .vue-flow__handle {
-  width: 10px;
-  height: 10px;
-  border: 1.5px solid var(--bg-base);
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--bg-base);
   background: var(--accent-1);
-  transition: background 0.15s var(--ease), box-shadow 0.15s var(--ease);
+  transition: background 0.15s var(--ease), box-shadow 0.15s var(--ease), transform 0.15s var(--ease);
+}
+
+.vue-flow__handle::after {
+  content: '';
+  position: absolute;
+  inset: -7px;
+  border-radius: 50%;
+}
+
+/*
+  拖动连线的过程中，把「目标 handle」的命中区撑满整个节点卡片。
+  注意用 ::after 而不是改 handle 自身尺寸：伪元素不影响 getBoundingClientRect，
+  连线的落点锚点仍然在节点左侧圆点上，只是更好点中。
+  只在 .is-connecting 时生效，否则会挡住节点本身的拖拽。
+*/
+.canvas.is-connecting .vue-flow__handle.target::after {
+  inset: -80px -208px -80px -16px;
+  border-radius: 16px;
+  background: rgba(99, 102, 241, 0.06);
 }
 
 .vue-flow__handle:hover,
 .vue-flow__handle.connectionindicator:hover {
-  background: var(--accent-2);
-  box-shadow: 0 0 10px var(--accent-2-glow);
+  background: var(--gradient-brand);
+  box-shadow: 0 0 12px var(--accent-2-glow);
+  transform: scale(1.25);
 }
 
 .vue-flow__handle-valid {
