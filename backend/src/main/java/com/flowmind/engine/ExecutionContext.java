@@ -1,16 +1,17 @@
 package com.flowmind.engine;
 
-import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 执行上下文：key = nodeKey，value = 节点输出的 Map。
  * 模板引用 "llm_1.text" 即从 data["llm_1"]["text"] 取值。
- * 阶梯 1 顺序执行无并发；阶梯 3 并行调度时换 ConcurrentHashMap，接口不变。
+ * 阶梯 3 起为并行调度，使用 ConcurrentHashMap 保证多执行线程安全；
+ * 节点按 nodeKey 隔离写入，天然无写冲突。
  */
 public class ExecutionContext {
 
-    private final Map<String, Object> data = new LinkedHashMap<>();
+    private final Map<String, Object> data = new ConcurrentHashMap<>();
 
     /** 将节点输出整体写入，如 context.putNodeOutput("llm_1", {"text": "..."})。 */
     public void putNodeOutput(String nodeKey, Map<String, Object> output) {
@@ -28,6 +29,6 @@ public class ExecutionContext {
     }
 
     public Map<String, Object> snapshot() {
-        return new LinkedHashMap<>(data);
+        return new java.util.LinkedHashMap<>(data);
     }
 }

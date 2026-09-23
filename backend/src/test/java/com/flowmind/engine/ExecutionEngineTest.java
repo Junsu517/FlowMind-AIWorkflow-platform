@@ -169,6 +169,72 @@ class ExecutionEngineTest {
     }
 
     @Test
+    void 无依赖分支并行执行() {
+        ExecutionEngine slowEngine = new ExecutionEngine(Map.of("llm", new NodeExecutor() {
+            @Override
+            public String type() {
+                return "llm";
+            }
+
+            @Override
+            public ExecutorResult execute(NodeExecutionContext ctx) {
+                try {
+                    Thread.sleep(300);
+                } catch (InterruptedException ignored) {
+                }
+                return new ExecutorResult(Map.of("text", "ok"), 0);
+            }
+        }));
+        List<GraphNode> nodes = List.of(
+                node("input_1", "input", "输入", inputConfig),
+                node("a", "llm", "A", Map.of("prompt", "p", "output_key", "text")),
+                node("b", "llm", "B", Map.of("prompt", "p", "output_key", "text")));
+        List<GraphEdge> edges = List.of(
+                new GraphEdge("input_1", "a", null),
+                new GraphEdge("input_1", "b", null));
+
+        long t0 = System.currentTimeMillis();
+        ExecutionReport report = slowEngine.execute(nodes, edges, Map.of("city", "南昌"), null);
+        long elapsed = System.currentTimeMillis() - t0;
+
+        assertEquals(ExecutionReport.STATUS_SUCCESS, report.getStatus());
+        assertTrue(elapsed < 550, "两个 300ms 节点应并行执行，实际耗时 " + elapsed + "ms");
+    }
+
+    @Test
+    void 节点失败后未执行节点标记跳过() {
+        ExecutionEngine failing = new ExecutionEngine(Map.of("llm", new NodeExecutor() {
+            @Override
+            public String type() {
+                return "llm";
+            }
+
+            @Override
+            public ExecutorResult execute(NodeExecutionContext ctx) {
+                if ("bad".equals(ctx.getNodeKey())) {
+                    throw new RuntimeException("boom");
+                }
+                return new ExecutorResult(Map.of("text", "ok"), 0);
+            }
+        }));
+        List<GraphNode> nodes = List.of(
+                node("input_1", "input", "输入", inputConfig),
+                node("bad", "llm", "会失败", Map.of("prompt", "p", "output_key", "text")),
+                node("after", "llm", "依赖失败节点", Map.of("prompt", "p", "output_key", "text")));
+        List<GraphEdge> edges = List.of(
+                new GraphEdge("input_1", "bad", null),
+                new GraphEdge("bad", "after", null));
+
+        ExecutionReport report = failing.execute(nodes, edges, Map.of("city", "南昌"), null);
+
+        assertEquals(ExecutionReport.STATUS_FAILED, report.getStatus());
+        Map<String, String> statusByKey = new java.util.HashMap<>();
+        report.getNodeResults().forEach(r -> statusByKey.put(r.getNodeKey(), r.getStatus()));
+        assertEquals("failed", statusByKey.get("bad"));
+        assertEquals("skipped", statusByKey.get("after"));
+    }
+
+    @Test
     void 回调时durationMs已设置() {
         ExecutionEngine slowEngine = new ExecutionEngine(Map.of("llm", new NodeExecutor() {
             @Override
