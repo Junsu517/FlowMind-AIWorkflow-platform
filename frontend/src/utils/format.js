@@ -36,6 +36,15 @@ export function formatCost(value) {
   return `$${Number(n.toFixed(4))}`
 }
 
+/** 文件大小（知识库文档列表用） */
+export function formatFileSize(bytes) {
+  const n = Number(bytes)
+  if (!Number.isFinite(n) || n <= 0) return '-'
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  return `${(n / 1024 / 1024).toFixed(2)} MB`
+}
+
 /** 相对时间兜底展示（列表页 hover 提示用） */
 export function fromNow(value) {
   if (!value) return ''

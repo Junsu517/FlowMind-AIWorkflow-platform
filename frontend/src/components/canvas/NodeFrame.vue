@@ -41,6 +41,7 @@ const props = defineProps({
 
 // 由编辑器页注入，避免节点组件再各自请求一次
 const tools = inject('fm-tools', ref([]))
+const knowledgeBases = inject('fm-knowledge', ref([]))
 
 const meta = computed(() => NODE_TYPE_META[props.nodeType] || { label: props.nodeType, short: '?' })
 
@@ -55,8 +56,11 @@ const summary = computed(() => {
     }
     case 'llm': {
       const toolCount = Array.isArray(c.tools) ? c.tools.length : 0
-      const base = c.model || '未选模型'
-      return toolCount ? `${base} · ${toolCount} 个工具` : base
+      const parts = [c.model || '未选模型']
+      if (toolCount) parts.push(`${toolCount} 个工具`)
+      const kb = (knowledgeBases.value || []).find((k) => k.id === c.knowledge_base_id)
+      if (kb) parts.push(`引用：${kb.name}`)
+      return parts.join(' · ')
     }
     case 'condition': {
       const n = (c.rules || []).length

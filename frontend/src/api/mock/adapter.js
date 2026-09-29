@@ -15,6 +15,14 @@ function delay(ms = 200) {
 }
 
 function parseBody(config) {
+  // 阶梯 5：文档上传走 multipart，FormData 不能按 JSON 解析
+  if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+    const out = { __formData: true }
+    config.data.forEach((value, key) => {
+      out[key] = value
+    })
+    return out
+  }
   if (config.data == null || config.data === '') return {}
   if (typeof config.data === 'string') {
     try {
@@ -103,6 +111,26 @@ function issueToken(user) {
 
 function authPayload(user) {
   return { token: issueToken(user), user: publicUser(user) }
+}
+
+function publicKnowledgeBase(k) {
+  return {
+    id: k.id,
+    name: k.name,
+    description: k.description,
+    createdAt: k.createdAt
+  }
+}
+
+function publicDocument(d) {
+  return {
+    id: d.id,
+    kbId: d.kbId,
+    filename: d.filename,
+    chunkCount: d.chunkCount,
+    fileSize: d.fileSize,
+    createdAt: d.createdAt
+  }
 }
 
 /** 执行记录对外结构（内部字段 snapshot/logs 不透出到 list/detail） */
@@ -434,6 +462,142 @@ const routes = [
       const wf = db.workflows.find((w) => w.id === exec.workflowId)
       if (!wf || wf.ownerId !== user.id) return fail(config, 403, 'FORBIDDEN', '无权查看该执行记录')
       return settle(config, 200, { items: exec.logs || [], total: (exec.logs || []).length })
+    }
+  },
+
+  // ---------- 知识库（契约 v1.5 / 阶梯 5）----------
+  {
+    method: 'get',
+    pattern: /^\/knowledge-bases$/,
+    handler(config) {
+      const user = currentUser(config)
+      if (!user) return fail(config, 401, 'UNAUTHORIZED', '未登录或登录已过期')
+      const db = getDb()
+      const list = db.knowledgeBases
+        .filter((k) => k.userId === user.id)
+        .map((k) => ({
+          ...publicKnowledgeBase(k),
+          documentCount: db.kbDocuments.filter((d) => d.kbId === k.id).length
+        }))
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      const params = config.params || {}
+      const page = Number(params.page) > 0 ? Number(params.page) : 1
+      const size = Math.min(Number(params.size) > 0 ? Number(params.size) : 10, 50)
+      return settle(config, 200, paginate(list, page, size))
+    }
+  },
+  {
+    method: 'post',
+    pattern: /^\/knowledge-bases$/,
+    handler(config, body) {
+      const user = currentUser(config)
+      if (!user) return fail(config, 401, 'UNAUTHORIZED', '未登录或登录已过期')
+      const name = String(body.name || '').trim()
+      if (!name) return fail(config, 400, 'VALIDATION_ERROR', '知识库名称不能为空')
+      const db = getDb()
+      const kb = {
+        id: nextId('knowledgeBase'),
+        userId: user.id,
+        name,
+        description: body.description || '',
+        createdAt: iso()
+      }
+      db.knowledgeBases.push(kb)
+      saveDb()
+      return settle(config, 201, publicKnowledgeBase(kb))
+    }
+  },
+  {
+    method: 'delete',
+    pattern: /^\/knowledge-bases\/(\d+)$/,
+    handler(config, body, match) {
+      const user = currentUser(config)
+      if (!user) return fail(config, 401, 'UNAUTHORIZED', '未登录或登录已过期')
+      const db = getDb()
+      const idx = db.knowledgeBases.findIndex((k) => k.id === Number(match[1]))
+      if (idx < 0) return fail(config, 404, 'KNOWLEDGE_BASE_NOT_FOUND', '知识库不存在')
+      if (db.knowledgeBases[idx].userId !== user.id) {
+        return fail(config, 403, 'FORBIDDEN', '无权删除该知识库')
+      }
+      const kbId = db.knowledgeBases[idx].id
+      db.knowledgeBases.splice(idx, 1)
+      // 级联删除文档（真实后端还会删 Chroma collection）
+      db.kbDocuments = db.kbDocuments.filter((d) => d.kbId !== kbId)
+      saveDb()
+      return settle(config, 204, undefined)
+    }
+  },
+  {
+    method: 'get',
+    pattern: /^\/knowledge-bases\/(\d+)\/documents$/,
+    handler(config, body, match) {
+      const user = currentUser(config)
+      if (!user) return fail(config, 401, 'UNAUTHORIZED', '未登录或登录已过期')
+      const db = getDb()
+      const kb = db.knowledgeBases.find((k) => k.id === Number(match[1]))
+      if (!kb) return fail(config, 404, 'KNOWLEDGE_BASE_NOT_FOUND', '知识库不存在')
+      if (kb.userId !== user.id) return fail(config, 403, 'FORBIDDEN', '无权访问该知识库')
+      const list = db.kbDocuments
+        .filter((d) => d.kbId === kb.id)
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+        .map(publicDocument)
+      return settle(config, 200, { items: list, total: list.length })
+    }
+  },
+  {
+    method: 'post',
+    pattern: /^\/knowledge-bases\/(\d+)\/documents$/,
+    handler(config, body, match) {
+      const user = currentUser(config)
+      if (!user) return fail(config, 401, 'UNAUTHORIZED', '未登录或登录已过期')
+      const db = getDb()
+      const kb = db.knowledgeBases.find((k) => k.id === Number(match[1]))
+      if (!kb) return fail(config, 404, 'KNOWLEDGE_BASE_NOT_FOUND', '知识库不存在')
+      if (kb.userId !== user.id) return fail(config, 403, 'FORBIDDEN', '无权向该知识库上传文档')
+
+      const file = body.file
+      if (!file) return fail(config, 400, 'VALIDATION_ERROR', '请选择要上传的文件')
+      const filename = file.name || 'unknown.txt'
+      const ext = String(filename).split('.').pop().toLowerCase()
+      if (!['txt', 'md', 'pdf'].includes(ext)) {
+        return fail(config, 400, 'DOCUMENT_PARSE_ERROR', '仅支持 txt / md / pdf 文档')
+      }
+      const size = file.size || 1024
+      if (size > 5 * 1024 * 1024) {
+        return fail(config, 400, 'DOCUMENT_TOO_LARGE', '文档不能超过 5MB')
+      }
+      // 假装有切分：约每 500 字一个 chunk
+      const chunkCount = Math.max(1, Math.min(99, Math.round(size / 500)))
+      const doc = {
+        id: nextId('kbDoc'),
+        kbId: kb.id,
+        filename,
+        chunkCount,
+        fileSize: size,
+        createdAt: iso()
+      }
+      db.kbDocuments.push(doc)
+      saveDb()
+      return settle(config, 201, publicDocument(doc))
+    }
+  },
+  {
+    method: 'delete',
+    pattern: /^\/knowledge-bases\/(\d+)\/documents\/(\d+)$/,
+    handler(config, body, match) {
+      const user = currentUser(config)
+      if (!user) return fail(config, 401, 'UNAUTHORIZED', '未登录或登录已过期')
+      const db = getDb()
+      const kb = db.knowledgeBases.find((k) => k.id === Number(match[1]))
+      if (!kb) return fail(config, 404, 'KNOWLEDGE_BASE_NOT_FOUND', '知识库不存在')
+      if (kb.userId !== user.id) return fail(config, 403, 'FORBIDDEN', '无权操作该知识库')
+      const idx = db.kbDocuments.findIndex(
+        (d) => d.id === Number(match[2]) && d.kbId === Number(match[1])
+      )
+      if (idx < 0) return fail(config, 404, 'KNOWLEDGE_BASE_NOT_FOUND', '文档不存在')
+      db.kbDocuments.splice(idx, 1)
+      saveDb()
+      return settle(config, 204, undefined)
     }
   }
 ]

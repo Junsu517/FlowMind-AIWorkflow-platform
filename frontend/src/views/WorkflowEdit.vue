@@ -80,6 +80,8 @@
         :node="selectedNode"
         :tools="tools"
         :tools-loading="toolsLoading"
+        :knowledge-bases="knowledgeBases"
+        :knowledge-loading="knowledgeLoading"
         :ref-options="refOptions"
         @delete="removeSelected"
       />
@@ -126,6 +128,7 @@ import WorkflowEditForm from '@/views/WorkflowEditForm.vue'
 import { getWorkflow, updateWorkflow } from '@/api/workflow'
 import { getGraph, saveGraph } from '@/api/graph'
 import { getTools } from '@/api/tools'
+import { getKnowledgeBases } from '@/api/knowledge'
 import {
   NODE_TYPE_META,
   graphToCanvas,
@@ -150,6 +153,8 @@ const name = ref('')
 const originName = ref('')
 const tools = ref([])
 const toolsLoading = ref(false)
+const knowledgeBases = ref([])
+const knowledgeLoading = ref(false)
 const loading = ref(true)
 const saving = ref(false)
 const dirty = ref(false)
@@ -160,6 +165,7 @@ const dropActive = ref(false)
 const ready = ref(false)
 
 provide('fm-tools', tools)
+provide('fm-knowledge', knowledgeBases)
 
 /** 新手引导：只在首次进入编辑器时出现，localStorage 记录「已看过」 */
 const GUIDE_KEY = 'flowmind_editor_guide_v1'
@@ -317,11 +323,20 @@ function pruneStaleEdges() {
   return stale.length
 }
 
-/** input 字段的显示名没填时用参数名兜底，运行时表单至少有可读的名字 */
-function applyInputLabelFallback(nodes) {
+/**
+ * 落库前的最后一道规范化（放在视图层，避开 graphModel 的契约转换函数禁区）：
+ * - input 字段的显示名没填时用参数名兜底
+ * - knowledge_base_id 为空就整个字段移除，与 tools 一样「按需下发」：
+ *   后端没配该字段时行为与现在完全一致
+ */
+function normalizeNodesForSave(nodes) {
   for (const n of nodes) {
-    if (n.type !== 'input') continue
-    n.config.fields = (n.config.fields || []).map((f) => ({ ...f, label: f.label || f.key }))
+    if (n.type === 'input') {
+      n.config.fields = (n.config.fields || []).map((f) => ({ ...f, label: f.label || f.key }))
+    }
+    if (n.type === 'llm' && n.config.knowledge_base_id == null) {
+      delete n.config.knowledge_base_id
+    }
   }
 }
 
@@ -381,7 +396,7 @@ async function save() {
       name.value = originName.value
     }
     const graph = canvasToGraph(flowNodes.value, flowEdges.value)
-    applyInputLabelFallback(graph.nodes)
+    normalizeNodesForSave(graph.nodes)
     await saveGraph(id.value, graph)
     dirty.value = false
     ElMessage.success('图已保存')
@@ -432,6 +447,19 @@ async function loadTools() {
   }
 }
 
+/** 与 tools 同一加载方式：编辑器进入时拉一次知识库列表 */
+async function loadKnowledge() {
+  knowledgeLoading.value = true
+  try {
+    const data = await getKnowledgeBases({ page: 1, size: 50 })
+    knowledgeBases.value = data.items || []
+  } catch (e) {
+    knowledgeBases.value = []
+  } finally {
+    knowledgeLoading.value = false
+  }
+}
+
 async function loadAll() {
   loading.value = true
   ready.value = false
@@ -463,7 +491,7 @@ onMounted(async () => {
   } catch {
     showGuide.value = true
   }
-  await loadTools()
+  await Promise.all([loadTools(), loadKnowledge()])
   if (!formMode.value) loadAll()
 })
 

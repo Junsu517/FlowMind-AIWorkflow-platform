@@ -40,6 +40,8 @@
             :nodes="nodes"
             :tools="tools"
             :tools-loading="toolsLoading"
+            :knowledge-bases="knowledgeBases"
+            :knowledge-loading="knowledgeLoading"
             @remove="removeNode(i)"
             @move-up="move(i, -1)"
             @move-down="move(i, 1)"
@@ -71,6 +73,7 @@ import DebugPanel from '@/components/editor/DebugPanel.vue'
 import { getWorkflow, updateWorkflow } from '@/api/workflow'
 import { getGraph, saveGraph } from '@/api/graph'
 import { getTools } from '@/api/tools'
+import { getKnowledgeBases } from '@/api/knowledge'
 import {
   NODE_TYPES,
   NODE_TYPE_META,
@@ -91,6 +94,8 @@ const originName = ref('')
 const nodes = ref([])
 const tools = ref([])
 const toolsLoading = ref(false)
+const knowledgeBases = ref([])
+const knowledgeLoading = ref(false)
 const loading = ref(true)
 const saving = ref(false)
 const dirty = ref(false)
@@ -108,11 +113,19 @@ watch(name, () => {
   if (ready.value) dirty.value = true
 })
 
-/** input 字段的显示名没填时用参数名兜底，运行时表单至少有可读的名字 */
-function applyInputLabelFallback(nodes) {
+/**
+ * 落库前的最后一道规范化（视图层做，避开 graphModel 的契约转换函数禁区）：
+ * - input 字段显示名没填时用参数名兜底
+ * - knowledge_base_id 为空则移除字段，保证后端未配该字段时行为不变
+ */
+function normalizeNodesForSave(nodes) {
   for (const n of nodes) {
-    if (n.type !== 'input') continue
-    n.config.fields = (n.config.fields || []).map((f) => ({ ...f, label: f.label || f.key }))
+    if (n.type === 'input') {
+      n.config.fields = (n.config.fields || []).map((f) => ({ ...f, label: f.label || f.key }))
+    }
+    if (n.type === 'llm' && n.config.knowledge_base_id == null) {
+      delete n.config.knowledge_base_id
+    }
   }
 }
 
@@ -169,7 +182,7 @@ async function save() {
       name.value = originName.value
     }
     const graph = formToGraph(nodes.value)
-    applyInputLabelFallback(graph.nodes)
+    normalizeNodesForSave(graph.nodes)
     await saveGraph(id.value, graph)
     dirty.value = false
     ElMessage.success('图已保存')
@@ -227,6 +240,18 @@ async function loadTools() {
   }
 }
 
+async function loadKnowledge() {
+  knowledgeLoading.value = true
+  try {
+    const data = await getKnowledgeBases({ page: 1, size: 50 })
+    knowledgeBases.value = data.items || []
+  } catch (e) {
+    knowledgeBases.value = []
+  } finally {
+    knowledgeLoading.value = false
+  }
+}
+
 async function loadAll() {
   loading.value = true
   loadError.value = ''
@@ -252,7 +277,7 @@ async function loadAll() {
 }
 
 onMounted(async () => {
-  await loadTools()
+  await Promise.all([loadTools(), loadKnowledge()])
   loadAll()
 })
 

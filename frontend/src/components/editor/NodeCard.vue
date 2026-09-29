@@ -54,7 +54,14 @@
 
     <!-- 类型专属配置表单（与画布右侧配置面板共用同一份实现） -->
     <div class="node-card__block">
-      <NodeConfigForm :node="node" :ref-options="refOptions" :tools="tools" :tools-loading="toolsLoading" />
+      <NodeConfigForm
+        :node="node"
+        :ref-options="refOptions"
+        :tools="tools"
+        :tools-loading="toolsLoading"
+        :knowledge-bases="knowledgeBases"
+        :knowledge-loading="knowledgeLoading"
+      />
     </div>
   </div>
 </template>
@@ -71,7 +78,9 @@ const props = defineProps({
   total: { type: Number, required: true },
   nodes: { type: Array, required: true },
   tools: { type: Array, default: () => [] },
-  toolsLoading: { type: Boolean, default: false }
+  toolsLoading: { type: Boolean, default: false },
+  knowledgeBases: { type: Array, default: () => [] },
+  knowledgeLoading: { type: Boolean, default: false }
 })
 
 const emit = defineEmits(['remove', 'move-up', 'move-down'])

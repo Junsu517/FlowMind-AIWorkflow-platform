@@ -15,6 +15,26 @@ const MOCK_ANSWER = [
   '（本结果由 MOCK 模式生成，未真实调用大模型）'
 ].join('\n')
 
+/**
+ * mock 的 RAG 引用来源：取该知识库下的真实文档名（假数据里建的），
+ * 让「引用来源」在 mock 模式下也能端到端看到效果。
+ */
+function mockReferences(kbId) {
+  if (kbId == null) return []
+  const db = getDb()
+  const docs = (db.kbDocuments || []).filter((d) => d.kbId === Number(kbId)).slice(0, 3)
+  if (!docs.length) {
+    return [
+      { filename: '示例文档.txt', snippet: '（mock）这是知识库里的一段示例内容，用于演示引用来源。', score: 0.88 }
+    ]
+  }
+  return docs.map((d, i) => ({
+    filename: d.filename,
+    snippet: `（mock）来自 ${d.filename} 的第 ${i + 1} 个片段：${d.chunkCount} 个切片中最相关的一段。`,
+    score: Number((0.92 - i * 0.06).toFixed(2))
+  }))
+}
+
 function chunkText(text, size = 6) {
   const out = []
   for (let i = 0; i < text.length; i += size) out.push(text.slice(i, i + size))
@@ -68,7 +88,11 @@ export function openMockStream({ executionId, onEvent, onError, onOpen, onClose 
         const durationMs = 900 + chunks.length * 28
         totalTokens += tokens
         totalMs += durationMs
-        output[node.nodeKey] = { [node.config?.output_key || 'text']: MOCK_ANSWER }
+        const out = { [node.config?.output_key || 'text']: MOCK_ANSWER }
+        // 契约 v1.5：引用了知识库的 llm 节点，输出附带 references
+        const refs = mockReferences(node.config?.knowledge_base_id)
+        if (refs.length) out.references = refs
+        output[node.nodeKey] = out
         emit('node_completed', { nodeKey: node.nodeKey, durationMs })
       } else if (node.type === 'http') {
         await wait(460)

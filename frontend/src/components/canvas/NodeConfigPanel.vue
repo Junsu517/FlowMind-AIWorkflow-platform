@@ -20,6 +20,8 @@
           :ref-options="refOptions"
           :tools="tools"
           :tools-loading="toolsLoading"
+          :knowledge-bases="knowledgeBases"
+          :knowledge-loading="knowledgeLoading"
         />
       </div>
     </template>
@@ -43,6 +45,8 @@ const props = defineProps({
   node: { type: Object, default: null },
   tools: { type: Array, default: () => [] },
   toolsLoading: { type: Boolean, default: false },
+  knowledgeBases: { type: Array, default: () => [] },
+  knowledgeLoading: { type: Boolean, default: false },
   refOptions: { type: Array, default: () => [] }
 })
 

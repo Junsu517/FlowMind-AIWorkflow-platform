@@ -58,7 +58,10 @@ function seed() {
     graphs: {},
     // 执行记录（契约 GET /executions/{id} 的结构）
     executions: [],
-    idSeq: { user: 1, workflow: 3, execution: 0 }
+    // 阶梯 5：知识库 + 文档（契约 v1.5）
+    knowledgeBases: [],
+    kbDocuments: [],
+    idSeq: { user: 1, workflow: 3, execution: 0, knowledgeBase: 0, kbDoc: 0 }
   }
 }
 
@@ -88,7 +91,9 @@ function normalize(db) {
   if (!db.tools) db.tools = TOOLS
   if (!db.graphs) db.graphs = {}
   if (!db.executions) db.executions = []
-  if (!db.idSeq) db.idSeq = { user: 1, workflow: 1, execution: 0 }
+  if (!db.knowledgeBases) db.knowledgeBases = []
+  if (!db.kbDocuments) db.kbDocuments = []
+  if (!db.idSeq) db.idSeq = { user: 1, workflow: 1, execution: 0, knowledgeBase: 0, kbDoc: 0 }
   if (db.idSeq.execution == null) db.idSeq.execution = 0
   return db
 }

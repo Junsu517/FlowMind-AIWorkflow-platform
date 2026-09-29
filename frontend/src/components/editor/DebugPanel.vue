@@ -55,6 +55,7 @@
           <span v-if="b.thinking" class="block__thinking">思考中…</span>
         </div>
         <pre class="fm-code block__text">{{ b.text }}<span v-if="!b.done" class="caret" /></pre>
+        <ReferenceList v-if="b.references && b.references.length" :items="b.references" />
       </div>
 
       <p v-if="!blocks.length && !running && !errorMsg" class="debug__placeholder">
@@ -84,6 +85,7 @@
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { VideoPlay, VideoPause, RefreshRight, CircleCloseFilled } from '@element-plus/icons-vue'
+import ReferenceList from '@/components/editor/ReferenceList.vue'
 import { executeWorkflow, getExecution, getExecutionLogs } from '@/api/execution'
 import { openExecutionStream } from '@/utils/sse'
 import { formatDuration, formatCost } from '@/utils/format'
@@ -338,6 +340,11 @@ function applyServerState(exec, logs) {
             b.done = true
           }
         }
+      }
+      // 契约 v1.5：引用知识库的 llm 节点，output 会带 references
+      const refs = item.output?.references
+      if (Array.isArray(refs) && refs.length) {
+        ensureBlock(item.nodeKey, item.nodeName).references = refs
       }
     }
   }

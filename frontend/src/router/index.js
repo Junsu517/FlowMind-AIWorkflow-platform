@@ -33,6 +33,12 @@ const routes = [
     component: () => import('@/views/Executions.vue'),
     meta: { title: '执行历史', requiresAuth: true }
   },
+  {
+    path: '/knowledge',
+    name: 'knowledge',
+    component: () => import('@/views/Knowledge.vue'),
+    meta: { title: '知识库', requiresAuth: true }
+  },
   { path: '/:pathMatch(.*)*', redirect: '/workflows' }
 ]
 

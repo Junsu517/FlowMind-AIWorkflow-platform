@@ -144,6 +144,7 @@
                 </div>
                 <p v-if="log.errorMessage" class="log__error">{{ log.errorMessage }}</p>
                 <pre v-if="log.output && Object.keys(log.output || {}).length" class="fm-code log__io">{{ shortJson(log.output) }}</pre>
+                <ReferenceList v-if="log.output?.references?.length" :items="log.output.references" />
               </div>
             </el-timeline-item>
           </el-timeline>
@@ -158,6 +159,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { Refresh, CircleCloseFilled } from '@element-plus/icons-vue'
 import AppHeader from '@/components/AppHeader.vue'
+import ReferenceList from '@/components/editor/ReferenceList.vue'
 import { getExecutions, getExecution, getExecutionLogs } from '@/api/execution'
 import { formatDateTime, formatDuration, formatCost } from '@/utils/format'
 
@@ -192,7 +194,13 @@ function pretty(value) {
 
 /** 节点日志的 output 可能非常大（如天气原始 JSON），抽屉里截断展示 */
 function shortJson(value) {
-  const text = pretty(value)
+  // references 由下方「引用来源」单独渲染，避免同一份数据出现两次
+  let target = value
+  if (value && Array.isArray(value.references)) {
+    const { references, ...rest } = value
+    target = rest
+  }
+  const text = pretty(target)
   return text.length > 800 ? `${text.slice(0, 800)}\n… （已截断，完整数据见上方 output）` : text
 }
 

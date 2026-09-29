@@ -132,6 +132,36 @@
           />
         </label>
       </div>
+
+      <!-- 契约 v1.5：引用知识库（RAG） -->
+      <label class="field">
+        <span class="field__label">
+          引用知识库
+          <el-tooltip
+            placement="top"
+            content="让模型基于知识库文档作答，输出会附带引用来源；不引用时与普通 LLM 节点行为完全一致"
+          >
+            <el-icon class="field__help"><QuestionFilled /></el-icon>
+          </el-tooltip>
+          <span class="field__hint">默认不引用；清空即不引用</span>
+        </span>
+        <el-select
+          v-model="node.config.knowledge_base_id"
+          class="field__control"
+          clearable
+          placeholder="不引用知识库"
+          :loading="knowledgeLoading"
+        >
+          <!-- 显式的「不引用」选项，比只能点角落的 × 更直观 -->
+          <el-option label="不引用知识库" :value="null" />
+          <el-option
+            v-for="kb in knowledgeBases"
+            :key="kb.id"
+            :label="kb.documentCount != null ? `${kb.name}（${kb.documentCount} 篇）` : kb.name"
+            :value="kb.id"
+          />
+        </el-select>
+      </label>
     </template>
 
     <!-- ---------- condition：规则 + 默认分支 ---------- -->
@@ -257,7 +287,10 @@ const props = defineProps({
   /** 可引用的上游字段：[{ label, ref }] */
   refOptions: { type: Array, default: () => [] },
   tools: { type: Array, default: () => [] },
-  toolsLoading: { type: Boolean, default: false }
+  toolsLoading: { type: Boolean, default: false },
+  /** 知识库列表（GET /api/knowledge-bases），llm 节点引用用 */
+  knowledgeBases: { type: Array, default: () => [] },
+  knowledgeLoading: { type: Boolean, default: false }
 })
 
 const promptRef = ref(null)

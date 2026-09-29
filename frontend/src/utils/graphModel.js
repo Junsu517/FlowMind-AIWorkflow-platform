@@ -55,13 +55,15 @@ export function defaultConfig(type) {
       return { fields: [{ key: '', label: '', type: 'text', default: '' }] }
     case 'llm':
       // 契约 v1.4：tools（tools 表 id 列表）+ max_tool_rounds（默认 3，防死循环）为可选字段
+      // 契约 v1.5：knowledge_base_id（引用知识库，null = 不引用）
       return {
         model: 'deepseek-flash',
         prompt: '',
         temperature: 0.7,
         output_key: 'text',
         tools: [],
-        max_tool_rounds: 3
+        max_tool_rounds: 3,
+        knowledge_base_id: null
       }
     case 'condition':
       return {
@@ -90,6 +92,11 @@ function normalizeConfig(type, config = {}) {
     merged.max_tool_rounds = rounds === '' || rounds === null || rounds === undefined
       ? null
       : Number(rounds)
+    // v1.5：知识库引用，null / 空字符串都视为「不引用」
+    const kbId = config.knowledge_base_id
+    merged.knowledge_base_id = kbId === '' || kbId === null || kbId === undefined
+      ? null
+      : Number(kbId)
   }
   if (type === 'condition') {
     merged.rules = Array.isArray(config.rules) && config.rules.length ? config.rules : base.rules
