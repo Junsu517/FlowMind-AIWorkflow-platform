@@ -7,6 +7,8 @@ import com.flowmind.engine.NodeExecutionContext;
 import com.flowmind.engine.NodeExecutor;
 import com.flowmind.entity.Tool;
 import com.flowmind.mapper.ToolMapper;
+import com.flowmind.service.rag.RagService;
+import com.flowmind.service.rag.RetrievedChunk;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.MediaType;
@@ -53,6 +55,7 @@ public class LlmNodeExecutor implements NodeExecutor {
 
     private final ToolMapper toolMapper;
     private final HttpToolInvoker httpToolInvoker;
+    private final RagService ragService;
     private final ObjectMapper objectMapper;
 
     private final OkHttpClient client = new OkHttpClient.Builder()
@@ -80,34 +83,57 @@ public class LlmNodeExecutor implements NodeExecutor {
         }
 
         List<Tool> tools = loadTools(config.get("tools"));
+        // RAG 分支（阶梯 5）：配置了 knowledge_base_id 时先检索，检索结果注入 system 消息；
+        // 未配置时 references 为 null，后续逻辑与原路径完全一致
+        List<RetrievedChunk> references = retrieveIfConfigured(config.get("knowledge_base_id"), prompt);
         if (tools.isEmpty()) {
-            return executeSingle(ctx, model, prompt, outputKey, config.get("temperature"));
+            return executeSingle(ctx, model, prompt, outputKey, config.get("temperature"), references);
         }
         int maxRounds = maxToolRounds(config.get("max_tool_rounds"));
-        return executeWithTools(ctx, model, prompt, outputKey, config.get("temperature"), tools, maxRounds);
+        return executeWithTools(ctx, model, prompt, outputKey, config.get("temperature"), tools, maxRounds, references);
+    }
+
+    /** 渲染后的 prompt 作为检索 query（方案 §3：MVP 简化）；检索失败节点 failed（用户显式配置了知识库）。 */
+    private List<RetrievedChunk> retrieveIfConfigured(Object kbIdConfig, String prompt) {
+        if (!(kbIdConfig instanceof Number kbId)) {
+            return null;
+        }
+        if (ragService == null) {
+            throw new IllegalStateException("知识库检索不可用（RagService 未装配）");
+        }
+        try {
+            return ragService.retrieve(kbId.longValue(), prompt);
+        } catch (Exception e) {
+            throw new IllegalStateException("知识库检索失败: " + e.getMessage(), e);
+        }
     }
 
     // ---------------- 单轮（无 Function Calling，阶梯 1 原路径） ----------------
 
     private ExecutorResult executeSingle(NodeExecutionContext ctx, String model, String prompt,
-                                         String outputKey, Object temperature) {
-        List<Map<String, Object>> messages = new ArrayList<>();
-        messages.add(Map.of("role", "user", "content", prompt));
+                                         String outputKey, Object temperature,
+                                         List<RetrievedChunk> references) {
+        List<Map<String, Object>> messages = buildMessages(prompt, references);
         ChatRound round = callChatStream(model, temperature, messages, null, true, ctx.getTokenSink());
-        return new ExecutorResult(Map.of(outputKey, round.content()), round.tokens());
+        Map<String, Object> output = new LinkedHashMap<>();
+        output.put(outputKey, round.content());
+        if (references != null) {
+            output.put("references", ragService.toReferences(references));
+        }
+        return new ExecutorResult(output, round.tokens());
     }
 
     // ---------------- Function Calling 代理循环（阶梯 4） ----------------
 
     private ExecutorResult executeWithTools(NodeExecutionContext ctx, String model, String prompt,
                                             String outputKey, Object temperature,
-                                            List<Tool> tools, int maxRounds) {
+                                            List<Tool> tools, int maxRounds,
+                                            List<RetrievedChunk> references) {
         List<Map<String, Object>> toolsParam = buildToolsParam(tools);
         Map<String, Tool> toolByName = new LinkedHashMap<>();
         tools.forEach(t -> toolByName.put(t.getName(), t));
 
-        List<Map<String, Object>> messages = new ArrayList<>();
-        messages.add(Map.of("role", "user", "content", prompt));
+        List<Map<String, Object>> messages = buildMessages(prompt, references);
 
         int totalTokens = 0;
         List<Map<String, Object>> toolCallLog = new ArrayList<>();
@@ -119,7 +145,7 @@ public class LlmNodeExecutor implements NodeExecutor {
             if (result.toolCalls().isEmpty()) {
                 // 最终轮：重放 content 增量到 tokenSink
                 result.contentDeltas().forEach(ctx.getTokenSink()::accept);
-                return buildResult(outputKey, result.content(), totalTokens, toolCallLog);
+                return buildResult(outputKey, result.content(), totalTokens, toolCallLog, references);
             }
 
             // 回填 assistant 消息（含 tool_calls），再逐个执行工具并回填 tool 消息
@@ -137,7 +163,17 @@ public class LlmNodeExecutor implements NodeExecutor {
         log.warn("llm 节点达到最大工具调用轮数后模型仍请求工具，强制截断: nodeKey={}, rounds={}",
                 ctx.getNodeKey(), maxRounds);
         String truncated = "[已达到最大工具调用轮数 " + maxRounds + "，执行被截断]";
-        return buildResult(outputKey, truncated, totalTokens, toolCallLog);
+        return buildResult(outputKey, truncated, totalTokens, toolCallLog, references);
+    }
+
+    /** user 消息之前按需注入 RAG 参考资料 system 消息（阶梯 5，先注入后照常走代理循环）。 */
+    private List<Map<String, Object>> buildMessages(String prompt, List<RetrievedChunk> references) {
+        List<Map<String, Object>> messages = new ArrayList<>();
+        if (references != null && !references.isEmpty()) {
+            messages.add(Map.of("role", "system", "content", ragService.buildSystemPrompt(references)));
+        }
+        messages.add(Map.of("role", "user", "content", prompt));
+        return messages;
     }
 
     /** 工具执行失败不 fail 节点：错误信息回填给模型自行决策（任务卡要求）。 */
@@ -165,10 +201,13 @@ public class LlmNodeExecutor implements NodeExecutor {
     }
 
     private ExecutorResult buildResult(String outputKey, String content, int totalTokens,
-                                       List<Map<String, Object>> toolCallLog) {
+                                       List<Map<String, Object>> toolCallLog, List<RetrievedChunk> references) {
         Map<String, Object> output = new LinkedHashMap<>();
         output.put(outputKey, content);
         output.put("tool_calls", toolCallLog);
+        if (references != null) {
+            output.put("references", ragService.toReferences(references));
+        }
         return new ExecutorResult(output, totalTokens);
     }
 

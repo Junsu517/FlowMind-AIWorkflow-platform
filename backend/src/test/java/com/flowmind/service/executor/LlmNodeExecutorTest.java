@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class LlmNodeExecutorTest {
 
     private final LlmNodeExecutor executor =
-            new LlmNodeExecutor(null, null, new ObjectMapper());
+            new LlmNodeExecutor(null, null, null, new ObjectMapper());
 
     private Tool tool(String paramsSchema) {
         Tool tool = new Tool();

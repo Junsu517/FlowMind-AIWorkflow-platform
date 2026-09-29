@@ -251,6 +251,99 @@ def main():
         ok = r.status_code == 200 and has_fields(body, ["items", "total", "page", "size"]) and any(e.get("id") == exec_id for e in body.get("items", []))
         check("执行历史列表含本次执行", ok, f"got {r.status_code}")
 
+    print("== 5. 知识库模块（阶梯 5 RAG） ==")
+    r = requests.post(f"{API}/knowledge-bases", headers=h_a, json={"name": "contract-check-kb", "description": "script"}, timeout=10)
+    kb = r.json() if r.status_code == 201 else {}
+    kb_id = kb.get("id")
+    check("创建知识库 201 且字段齐全", r.status_code == 201 and has_fields(kb, ["id", "name", "description", "createdAt"]), f"got {r.status_code} {r.text[:120]}")
+
+    r = requests.get(f"{API}/knowledge-bases", headers=h_a, params={"page": 1, "size": 10}, timeout=10)
+    kb_items = (r.json() or {}).get("items", [])
+    check("知识库列表含新建库且带 documentCount", r.status_code == 200 and any(i.get("id") == kb_id and "documentCount" in i for i in kb_items), f"got {r.status_code} {r.text[:150]}")
+
+    r = requests.get(f"{API}/knowledge-bases/{kb_id}/documents", headers=h_a, timeout=10)
+    check("空文档列表 200", r.status_code == 200, f"got {r.status_code} {r.text[:120]}")
+
+    import tempfile
+    import os
+    rag_ok = False
+    doc_id = None
+    if kb_id:
+        # 非支持类型：不依赖 embedding，任何环境都应 400
+        with tempfile.NamedTemporaryFile("wb", suffix=".exe", delete=False) as f:
+            f.write(b"MZ fake exe for contract check")
+            exe_path = f.name
+        with open(exe_path, "rb") as f:
+            r = requests.post(f"{API}/knowledge-bases/{kb_id}/documents", headers=h_a,
+                              files={"file": ("fake.exe", f)}, timeout=15)
+        os.unlink(exe_path)
+        check("上传 .exe 400 DOCUMENT_PARSE_ERROR", r.status_code == 400 and expect_error(r, "DOCUMENT_PARSE_ERROR"), f"got {r.status_code} {r.text[:120]}")
+
+        # 真实 txt 上传：依赖 embedding + Chroma
+        with tempfile.NamedTemporaryFile("w", suffix=".txt", encoding="utf-8", delete=False) as f:
+            f.write(("FlowMind 契约检查：这是用于验证 RAG 知识库链路的中文测试文档。猫咪每天需要喂食两次，每次四十克猫粮。") * 12)
+            txt_path = f.name
+        with open(txt_path, "rb") as f:
+            r = requests.post(f"{API}/knowledge-bases/{kb_id}/documents", headers=h_a,
+                              files={"file": ("contract-check.txt", f)}, timeout=60)
+        os.unlink(txt_path)
+        if r.status_code == 502 and expect_error(r, "EMBEDDING_ERROR"):
+            print("  (SKIP: embedding 未配置，跳过 RAG 上传/执行相关检查)")
+        else:
+            doc = r.json() if r.status_code == 201 else {}
+            check("上传 txt 201 且 chunkCount≥1", r.status_code == 201 and doc.get("chunkCount", 0) >= 1, f"got {r.status_code} {r.text[:150]}")
+            doc_id = doc.get("id")
+            r = requests.get(f"{API}/knowledge-bases/{kb_id}/documents", headers=h_a, timeout=10)
+            doc_items = (r.json() or {}).get("items", [])
+            check("文档列表含上传文档", r.status_code == 200 and any(i.get("id") == doc_id for i in doc_items), f"got {r.status_code} {r.text[:150]}")
+            rag_ok = doc_id is not None
+
+        # RAG 执行链路（真实 embedding + Chroma + DeepSeek）
+        if rag_ok:
+            rag_graph = {
+                "nodes": [
+                    {"nodeKey": "input_1", "type": "input", "name": "输入",
+                     "config": {"fields": [{"key": "q", "label": "问题", "type": "text", "default": ""}]},
+                     "positionX": 0, "positionY": 0},
+                    {"nodeKey": "llm_1", "type": "llm", "name": "RAG 回答",
+                     "config": {"model": "deepseek-flash", "prompt": "猫咪每天喂几次？每次喂多少克？",
+                                "temperature": 0, "output_key": "text", "knowledge_base_id": kb_id},
+                     "positionX": 100, "positionY": 0},
+                ],
+                "edges": [{"sourceNodeKey": "input_1", "targetNodeKey": "llm_1", "sourceHandle": None}],
+            }
+            r = requests.post(f"{API}/workflows", headers=h_a, json={"name": "rag-check", "description": "script"}, timeout=10)
+            rag_wf = r.json().get("id") if r.status_code == 201 else None
+            requests.put(f"{API}/workflows/{rag_wf}/graph", headers=h_a, json=rag_graph, timeout=10)
+            r = requests.post(f"{API}/workflows/{rag_wf}/execute", headers=h_a, json={"input": {}}, timeout=10)
+            rag_exec = r.json().get("executionId") if r.status_code == 202 else None
+            if rag_exec:
+                terminal = None
+                for _ in range(30):
+                    time.sleep(3)
+                    r = requests.get(f"{API}/executions/{rag_exec}", headers=h_a, timeout=10)
+                    if r.status_code != 200:
+                        break
+                    detail = r.json()
+                    if detail.get("status") in ("success", "failed", "cancelled"):
+                        terminal = detail
+                        break
+                check("RAG 执行到达终态", terminal is not None, "30 次轮询后仍非终态")
+                if terminal:
+                    refs = (terminal.get("output") or {}).get("llm_1", {}).get("references")
+                    check("RAG 执行成功且 references 非空", terminal.get("status") == "success" and isinstance(refs, list) and len(refs) > 0, f"status={terminal.get('status')} refs={str(refs)[:120]}")
+
+    # 清理
+    if doc_id:
+        r = requests.delete(f"{API}/knowledge-bases/{kb_id}/documents/{doc_id}", headers=h_a, timeout=10)
+        check("删除文档 204", r.status_code == 204, f"got {r.status_code}")
+    if kb_id:
+        r = requests.delete(f"{API}/knowledge-bases/{kb_id}", headers=h_a, timeout=15)
+        check("删除知识库 204", r.status_code == 204, f"got {r.status_code} {r.text[:120]}")
+        r = requests.get(f"{API}/knowledge-bases", headers=h_a, params={"page": 1, "size": 10}, timeout=10)
+        kb_items = (r.json() or {}).get("items", [])
+        check("知识库列表已无删除项", r.status_code == 200 and not any(i.get("id") == kb_id for i in kb_items), f"got {r.status_code}")
+
     print()
     if failures:
         print(f"结果: FAIL（{len(failures)} 项未通过）")

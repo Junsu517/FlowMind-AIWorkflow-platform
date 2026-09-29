@@ -2,6 +2,11 @@ server:
   port: 8080
 
 spring:
+  servlet:
+    multipart:
+      # 5MB 精确限制在 service 层做（DOCUMENT_TOO_LARGE）；这里放宽避免容器先拦成 500
+      max-file-size: 32MB
+      max-request-size: 33MB
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: ${DB_URL:jdbc:mysql://localhost:3306/flowmind?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
@@ -26,6 +31,14 @@ flowmind:
 deepseek:
   base-url: https://api.deepseek.com/v1
   api-key: ${DEEPSEEK_API_KEY:}
+
+# 阶梯 5 RAG：向量库与向量化服务（Chroma 本地端口 8001，统筹 2026-09 更正）
+chroma:
+  base-url: ${CHROMA_BASE_URL:http://127.0.0.1:8001}
+embedding:
+  base-url: ${EMBEDDING_BASE_URL:https://api.siliconflow.cn/v1}
+  api-key: ${EMBEDDING_API_KEY:}
+  model: BAAI/bge-m3
 
 logging:
   level:

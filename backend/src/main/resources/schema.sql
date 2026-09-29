@@ -107,6 +107,26 @@ CREATE TABLE IF NOT EXISTS tools (
     UNIQUE KEY uk_name (name)
 ) ENGINE=InnoDB COMMENT='工具表';
 
+-- 知识库表（阶梯 5 RAG，SQL 来自 docs/阶梯5-RAG技术方案.md §2，统筹定稿）
+CREATE TABLE IF NOT EXISTS knowledge_bases (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    description VARCHAR(500) DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_user (user_id)
+) ENGINE=InnoDB COMMENT='知识库表';
+
+CREATE TABLE IF NOT EXISTS knowledge_documents (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    kb_id BIGINT NOT NULL,
+    filename VARCHAR(255) NOT NULL,
+    chunk_count INT DEFAULT 0,
+    file_size INT DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_kb (kb_id)
+) ENGINE=InnoDB COMMENT='知识库文档表';
+
 -- 预置演示工具
 INSERT INTO tools (name, display_name, description, method, url_template, params_schema) VALUES
 ('weather_query', '天气查询', '查询指定城市的实时天气情况', 'GET',

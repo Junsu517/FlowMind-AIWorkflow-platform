@@ -67,7 +67,7 @@ class LlmNodeExecutorTruncationTest {
                 return Map.of("echo", params);
             }
         };
-        return new LlmNodeExecutor(stubToolMapper(tool(toolName)), stubInvoker, objectMapper);
+        return new LlmNodeExecutor(stubToolMapper(tool(toolName)), stubInvoker, null, objectMapper);
     }
 
     /** JDK 动态代理 stub：selectBatchIds 返回预置工具，规避 JDK 25 下 Mockito 不可用。 */
@@ -158,7 +158,7 @@ class LlmNodeExecutorTruncationTest {
             }
         };
         LlmNodeExecutor executor = new LlmNodeExecutor(stubToolMapper(tool("broken_tool")),
-                failingInvoker, objectMapper);
+                failingInvoker, null, objectMapper);
         ReflectionTestUtils.setField(executor, "baseUrl", deepseek.url("/v1").toString().replaceAll("/$", ""));
         ReflectionTestUtils.setField(executor, "apiKey", "sk-test");
 
