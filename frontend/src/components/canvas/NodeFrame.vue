@@ -9,7 +9,12 @@
         <div class="fm-node__name">{{ data.name }}</div>
         <div class="fm-node__key fm-mono">{{ data.nodeKey }}</div>
       </div>
-      <span class="fm-dot" :class="`fm-dot--${data.status || 'pending'}`" />
+      <!-- idle（pending）时不渲染状态点：灰色圆点会被误认为可交互 -->
+      <span
+        v-if="data.status && data.status !== 'pending'"
+        class="fm-dot"
+        :class="`fm-dot--${data.status}`"
+      />
     </div>
 
     <div class="fm-node__summary">{{ summary }}</div>
@@ -45,7 +50,10 @@ const knowledgeBases = inject('fm-knowledge', ref([]))
 
 const meta = computed(() => NODE_TYPE_META[props.nodeType] || { label: props.nodeType, short: '?' })
 
-const handles = computed(() => (props.nodeType === 'condition' ? branchHandles(props.data) : []))
+// 去重：规则 handle 与默认 handle 同名时，画布上不该出现两个一样的出口
+const handles = computed(() =>
+  props.nodeType === 'condition' ? [...new Set(branchHandles(props.data))] : []
+)
 
 const summary = computed(() => {
   const c = props.data.config || {}

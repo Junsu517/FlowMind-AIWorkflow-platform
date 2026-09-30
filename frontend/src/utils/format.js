@@ -25,14 +25,15 @@ export function formatDuration(ms) {
 
 /**
  * 费用：全站统一（执行历史列表 / 详情抽屉 / 调试面板统计条都走这一个函数）
- * 规则：$ + 最多 4 位小数（0.001923456 → $0.0019），0 显示 $0，极小值走科学计数法
+ * 规则：$ + 最多 4 位小数（0.001923456 → $0.0019），0 显示 $0；
+ * 小于 $0.0001 的极小值显示 <$0.0001（不用科学计数法，非计科读者也看得懂）
  */
 export function formatCost(value) {
   if (value == null) return '-'
   const n = Number(value)
   if (!Number.isFinite(n)) return '-'
   if (n === 0) return '$0'
-  if (n > 0 && n < 0.0001) return `$${n.toExponential(2)}`
+  if (n > 0 && n < 0.0001) return '<$0.0001'
   return `$${Number(n.toFixed(4))}`
 }
 

@@ -168,26 +168,33 @@
     <template v-else-if="node.type === 'condition'">
       <div class="block-title">
         <span>分支规则</span>
-        <span class="block-title__hint">按顺序匹配，命中则走对应 handle</span>
+        <span class="block-title__hint">按顺序匹配，命中则走对应分支（handle）</span>
       </div>
-      <div v-for="(r, i) in node.config.rules" :key="`rule-${i}`" class="rule-row">
-        <el-input v-model="r.left" placeholder="左值，如 {{input_1.city}}" class="rule-row__left" />
-        <el-select v-model="r.operator" class="rule-row__op">
-          <el-option v-for="o in CONDITION_OPERATORS" :key="o.value" :label="o.label" :value="o.value" />
-        </el-select>
-        <el-input
-          v-model="r.right"
-          :disabled="r.operator === 'not_empty'"
-          :placeholder="r.operator === 'not_empty' ? '（非空判断无需右值）' : '右值'"
-          class="rule-row__right"
-        />
-        <el-input v-model="r.handle" placeholder="handle" class="rule-row__handle" />
-        <el-button
-          text
-          :icon="Remove"
-          :disabled="node.config.rules.length <= 1"
-          @click="node.config.rules.splice(i, 1)"
-        />
+      <div v-for="(r, i) in node.config.rules" :key="`rule-${i}`" class="rule">
+        <div class="rule__head">
+          <span class="rule__index">规则 {{ i + 1 }}</span>
+          <el-button
+            text
+            :icon="Remove"
+            :disabled="node.config.rules.length <= 1"
+            @click="node.config.rules.splice(i, 1)"
+          />
+        </div>
+        <div class="rule__row">
+          <el-input v-model="r.left" placeholder="左值，如 {{input_1.city}}" class="rule__left" />
+          <el-select v-model="r.operator" class="rule__op">
+            <el-option v-for="o in CONDITION_OPERATORS" :key="o.value" :label="o.label" :value="o.value" />
+          </el-select>
+        </div>
+        <div class="rule__row">
+          <el-input
+            v-model="r.right"
+            :disabled="r.operator === 'not_empty'"
+            :placeholder="r.operator === 'not_empty' ? '非空判断无需右值' : '右值'"
+            class="rule__grow"
+          />
+          <el-input v-model="r.handle" placeholder="分支标识（如 beijing）" class="rule__grow" />
+        </div>
       </div>
       <el-button
         size="small"
@@ -207,8 +214,15 @@
       </el-button>
 
       <label class="field field--inline">
-        <span class="field__label">默认分支 default_handle</span>
-        <el-input v-model="node.config.default_handle" class="field__control field__control--sm" />
+        <span class="field__label">
+          默认分支 default_handle
+          <span class="field__hint">所有规则都没命中时走这个出口</span>
+        </span>
+        <el-input
+          v-model="node.config.default_handle"
+          class="field__control field__control--sm"
+          placeholder="如 other"
+        />
       </label>
     </template>
 
@@ -364,8 +378,7 @@ function insertRef(text) {
   color: var(--accent-chip-text);
 }
 
-.kv-row,
-.rule-row {
+.kv-row {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -382,18 +395,54 @@ function insertRef(text) {
   flex: 0 0 92px;
 }
 
-.rule-row__left,
-.rule-row__right {
-  flex: 1 1 140px;
+/*
+ * 条件规则：一行塞 4 个输入框在 340px 面板里必然溢出，
+ * 中间的输入框会被压到 0 宽，导致相邻两个组件的圆角边框叠在一起
+ * （用户看到的"重复括号"）。改成每条规则一张两行小卡片。
+ */
+.rule {
+  padding: 10px 12px 12px;
+  margin-bottom: 8px;
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-md);
+  background: var(--bg-glass);
+}
+
+.rule__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.rule__index {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-faint);
+}
+
+.rule__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rule__row + .rule__row {
+  margin-top: 8px;
+}
+
+.rule__left {
+  flex: 1 1 auto;
   min-width: 0;
 }
 
-.rule-row__op {
-  flex: 0 0 104px;
+.rule__op {
+  flex: 0 0 108px;
 }
 
-.rule-row__handle {
-  flex: 0 0 120px;
+.rule__grow {
+  flex: 1 1 120px;
+  min-width: 0;
 }
 
 .add-btn {

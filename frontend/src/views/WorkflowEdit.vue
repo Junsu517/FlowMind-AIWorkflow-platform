@@ -30,6 +30,8 @@
           <el-button text :icon="ListIcon" @click="switchToForm">表单版</el-button>
         </el-tooltip>
         <el-button text :icon="Clock" @click="router.push('/executions')">执行历史</el-button>
+        <!-- 删除入口不能只依赖键盘：选中节点或连线后这里出现 -->
+        <el-button v-if="hasSelection" :icon="DeleteIcon" @click="deleteSelected">删除所选</el-button>
         <el-button class="fm-btn-primary" :icon="Select" :loading="saving" @click="save">保存</el-button>
       </div>
     </div>
@@ -52,11 +54,13 @@
           :min-zoom="0.3"
           :max-zoom="2"
           :default-viewport="{ x: 0, y: 0, zoom: 0.9 }"
-          :delete-key-code="null"
+          :delete-key-code="['Delete', 'Backspace']"
           :connect-on-click="false"
           :elevate-edges-on-select="true"
           :connection-mode="ConnectionMode.Loose"
           :connection-radius="36"
+          :default-edge-options="{ type: 'smoothstep' }"
+          :connection-line-type="'smoothstep'"
         >
           <template #node-fm-input="props"><InputNode v-bind="props" /></template>
           <template #node-fm-llm="props"><LlmNode v-bind="props" /></template>
@@ -107,6 +111,7 @@ import { computed, nextTick, onMounted, provide, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, ArrowDown, Select, MagicStick, Clock, VideoPlay } from '@element-plus/icons-vue'
+import { Delete as DeleteIcon } from '@element-plus/icons-vue'
 import { Grid as GridIcon, List as ListIcon } from '@element-plus/icons-vue'
 import { VueFlow, useVueFlow, ConnectionMode } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
@@ -197,6 +202,14 @@ const {
   screenToFlowCoordinate,
   fitView
 } = useVueFlow()
+
+/**
+ * 走线用 smoothstep（小圆角折线）：贝塞尔在两节点靠近时控制点外扩，
+ * 线会越过目标节点再折回；smoothstep 不会突入节点内部。
+ */
+function withEdgeType(edges) {
+  return (edges || []).map((e) => ({ ...e, type: 'smoothstep' }))
+}
 
 /** 正在拖连线：此时把目标 handle 的热区撑满整个节点（见 global.css 的 .is-connecting） */
 const connecting = ref(false)
@@ -298,6 +311,31 @@ function removeSelected() {
   if (!selectedId.value) return
   removeNodes(selectedId.value)
   selectedId.value = ''
+  dirty.value = true
+}
+
+/** 画布上有选中的节点或连线（用于显示“删除所选”按钮） */
+const hasSelection = computed(
+  () => flowNodes.value.some((n) => n.selected) || flowEdges.value.some((e) => e.selected)
+)
+
+/** 删除当前选中的连线 / 节点（键盘 Delete/Backspace 走 Vue Flow 自己的处理） */
+function deleteSelected() {
+  const edgeIds = flowEdges.value.filter((e) => e.selected).map((e) => e.id)
+  const nodeIds = flowNodes.value.filter((n) => n.selected).map((n) => n.id)
+  if (!edgeIds.length && !nodeIds.length) {
+    ElMessage.warning('先点选要删除的节点或连线')
+    return
+  }
+  if (edgeIds.length) removeEdges(edgeIds)
+  if (nodeIds.length) {
+    removeNodes(nodeIds)
+    if (nodeIds.includes(selectedId.value)) selectedId.value = ''
+  }
+  const parts = []
+  if (nodeIds.length) parts.push(`${nodeIds.length} 个节点`)
+  if (edgeIds.length) parts.push(`${edgeIds.length} 条连线`)
+  ElMessage.success(`已删除 ${parts.join('、')}`)
   dirty.value = true
 }
 
@@ -421,7 +459,7 @@ async function applyTemplate(cmd) {
   }
   const graph = cmd === 'branch' ? branchCanvasGraph() : weatherCanvasGraph()
   setNodes(graph.nodes)
-  setEdges(graph.edges)
+  setEdges(withEdgeType(graph.edges))
   selectedId.value = ''
   dirty.value = true
   nextTick(() => fitView({ padding: 0.2 }))
@@ -470,7 +508,7 @@ async function loadAll() {
     const canvas = graphToCanvas(graph)
     // 画布版不再自动套模板：空画布要展示引导态（模板由工具栏按钮一键生成）
     setNodes(canvas.nodes)
-    setEdges(canvas.edges)
+    setEdges(withEdgeType(canvas.edges))
     selectedId.value = ''
     nextTick(() => {
       fitView({ padding: 0.2 })
