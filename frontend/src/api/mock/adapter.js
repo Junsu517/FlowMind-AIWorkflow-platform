@@ -403,7 +403,8 @@ const routes = [
         id: nextId('execution'),
         workflowId: wf.id,
         workflowName: wf.name,
-        status: 'running',
+        // 契约 v1.6：先 queued（排队中），模拟 MQ 消费者延迟接手
+        status: 'queued',
         input,
         output: {},
         totalTokens: 0,
@@ -417,6 +418,14 @@ const routes = [
       }
       db.executions.unshift(exec)
       saveDb()
+      // 约 1.5s 后转为 running，让前端能真实观测到"排队中"这一态
+      setTimeout(() => {
+        const e = getDb().executions.find((x) => x.id === exec.id)
+        if (e && e.status === 'queued') {
+          e.status = 'running'
+          saveDb()
+        }
+      }, 1500)
       return settle(config, 202, { executionId: exec.id })
     }
   },

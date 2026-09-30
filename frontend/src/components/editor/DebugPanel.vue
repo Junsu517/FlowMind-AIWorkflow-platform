@@ -302,20 +302,31 @@ function startStream(executionId) {
   })
 }
 
-/** 用服务端数据补齐状态（SSE 结束或失败后调用） */
+/**
+ * 用服务端数据补齐状态（SSE 结束或失败后调用）。
+ * 契约 v1.6：如果服务端状态还是 queued/running（MQ 消费者没接手或还在跑），
+ * 说明这次收尾收早了——显示当前状态但继续轮询，别把排队中当成终态停下来。
+ */
 async function finalizeFromServer(executionId) {
+  let keepWaiting = false
   try {
     const [exec, logs] = await Promise.all([
       getExecution(executionId),
       getExecutionLogs(executionId).catch(() => null)
     ])
     applyServerState(exec, logs)
+    if (exec && isPending(exec.status)) {
+      keepWaiting = true
+      startPolling(executionId)
+    }
   } catch (e) {
     /* 错误已由拦截器提示 */
   } finally {
-    running.value = false
-    hasResult.value = true
-    stopTimers()
+    if (!keepWaiting) {
+      running.value = false
+      hasResult.value = true
+      stopTimers()
+    }
   }
 }
 
@@ -394,7 +405,12 @@ function startPolling(executionId) {
           statuses[item.nodeKey] = item.status
         }
       }
-      if (exec && exec.status !== 'running') {
+      if (exec && isPending(exec.status)) {
+        // 契约 v1.6：排队中/运行中——把当前状态显示出来，继续轮询，别停
+        stats.value = { ...(stats.value || {}), status: exec.status }
+        return
+      }
+      if (exec) {
         applyServerState(exec, logs)
         running.value = false
         hasResult.value = true
@@ -410,7 +426,19 @@ function startPolling(executionId) {
 }
 
 function statusText(status) {
-  return { success: '成功', failed: '失败', running: '运行中', pending: '等待中' }[status] || status || '-'
+  const map = {
+    success: '成功',
+    failed: '失败',
+    running: '运行中',
+    queued: '排队中',
+    pending: '等待中'
+  }
+  return map[status] || status || '-'
+}
+
+/** 契约 v1.6：queued 是"已提交、消费者还没接手"，跟 running 一样属于没结束 */
+function isPending(status) {
+  return status === 'queued' || status === 'running'
 }
 
 onBeforeUnmount(() => {
@@ -690,5 +718,8 @@ defineExpose({ reset })
 }
 .stat--running b {
   color: var(--status-running);
+}
+.stat--queued b {
+  color: var(--status-queued);
 }
 </style>

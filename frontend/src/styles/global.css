@@ -63,6 +63,7 @@
 
   /* 执行状态色（调试面板 / 历史页徽章，视觉规范：灰蓝绿红橙） */
   --status-pending: #8b93a7;
+  --status-queued: #a78bfa;
   --status-running: #60a5fa;
   --status-success: #34d399;
   --status-failed: #f87171;
@@ -198,6 +199,13 @@ body::after {
 
 .fm-dot--pending {
   background: var(--status-pending);
+}
+
+/* 契约 v1.6：queued = 已提交、MQ 消费者还没接手（慢一点的呼吸，和 running 好区分） */
+.fm-dot--queued {
+  background: var(--status-queued);
+  box-shadow: 0 0 10px var(--status-queued);
+  animation: fm-pulse 2.4s var(--ease) infinite;
 }
 
 .fm-dot--running {

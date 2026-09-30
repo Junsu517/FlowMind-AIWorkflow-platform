@@ -176,10 +176,20 @@ const detailLoading = ref(false)
 
 let timer = null
 
-const hasRunning = computed(() => items.value.some((r) => r.status === 'running'))
+// 契约 v1.6：queued（排队中）与 running 一样属于"还没结束"，都要继续轮询
+const hasRunning = computed(() =>
+  items.value.some((r) => r.status === 'running' || r.status === 'queued')
+)
 
 function statusText(status) {
-  return { success: '成功', failed: '失败', running: '运行中', pending: '等待中', skipped: '已跳过' }[status] || status || '-'
+  return {
+    success: '成功',
+    failed: '失败',
+    running: '运行中',
+    queued: '排队中',
+    pending: '等待中',
+    skipped: '已跳过'
+  }[status] || status || '-'
 }
 
 function pretty(value) {
@@ -205,7 +215,14 @@ function shortJson(value) {
 }
 
 function timelineColor(status) {
-  return { success: '#34d399', failed: '#f87171', running: '#60a5fa', skipped: '#fb923c' }[status] || '#8b93a7'
+  const map = {
+    success: '#34d399',
+    failed: '#f87171',
+    running: '#60a5fa',
+    queued: '#a78bfa',
+    skipped: '#fb923c'
+  }
+  return map[status] || '#8b93a7'
 }
 
 async function load() {
@@ -333,6 +350,11 @@ onBeforeUnmount(() => {
 .status-badge--running .dot {
   background: var(--status-running);
   animation: pulse 1.2s var(--ease) infinite;
+}
+/* 排队中：紫色 + 更慢的呼吸，避免和"运行中"混淆 */
+.status-badge--queued .dot {
+  background: var(--status-queued);
+  animation: pulse 2.4s var(--ease) infinite;
 }
 .status-badge--failed .dot {
   background: var(--status-failed);
