@@ -160,6 +160,11 @@ class KnowledgeBaseFlowTest {
         UserContext.clear();
     }
 
+    private boolean isTerminal(Long executionId) {
+        String status = executionMapper.selectById(executionId).getStatus();
+        return "success".equals(status) || "failed".equals(status);
+    }
+
     @Test
     void uploadRetrieveAndRagExecution() throws Exception {
         // 1. 建库 + 上传
@@ -211,7 +216,7 @@ class KnowledgeBaseFlowTest {
                     java.util.Map.of("question", "费利克斯猫每天喂几次？每次多少克？"));
             await().atMost(java.time.Duration.ofSeconds(60))
                     .pollInterval(java.time.Duration.ofMillis(500))
-                    .until(() -> !"running".equals(executionMapper.selectById(executionId).getStatus()));
+                    .until(() -> isTerminal(executionId));
             Execution execution = executionMapper.selectById(executionId);
             assertEquals("success", execution.getStatus(),
                     "RAG 执行应成功: " + execution.getErrorMessage());

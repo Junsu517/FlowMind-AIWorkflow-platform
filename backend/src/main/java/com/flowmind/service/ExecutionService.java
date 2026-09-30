@@ -10,32 +10,29 @@ import com.flowmind.common.UserContext;
 import com.flowmind.dto.execution.ExecutionVO;
 import com.flowmind.dto.execution.NodeLogVO;
 import com.flowmind.dto.workflow.PageVO;
-import com.flowmind.engine.CycleException;
-import com.flowmind.engine.ExecutionEngine;
-import com.flowmind.engine.model.ExecutionReport;
-import com.flowmind.engine.model.GraphEdge;
-import com.flowmind.engine.model.GraphNode;
-import com.flowmind.engine.model.NodeResult;
 import com.flowmind.entity.Execution;
 import com.flowmind.entity.ExecutionNodeLog;
 import com.flowmind.entity.Workflow;
-import com.flowmind.entity.WorkflowEdge;
 import com.flowmind.entity.WorkflowNode;
 import com.flowmind.mapper.ExecutionMapper;
 import com.flowmind.mapper.ExecutionNodeLogMapper;
-import com.flowmind.mapper.WorkflowEdgeMapper;
 import com.flowmind.mapper.WorkflowMapper;
 import com.flowmind.mapper.WorkflowNodeMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
+/**
+ * 执行提交与查询（阶梯 6 改造）：
+ * 提交 = Redis 分布式锁（主防线）→ 落 queued 行 → MQ publish（mqueue）或线程池（thread）→ 202。
+ * 实际执行在 ExecutionRunner（两种模式共用），SSE/落库行为不变。
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -47,18 +44,22 @@ public class ExecutionService {
 
     private final WorkflowMapper workflowMapper;
     private final WorkflowNodeMapper nodeMapper;
-    private final WorkflowEdgeMapper edgeMapper;
     private final ExecutionMapper executionMapper;
     private final ExecutionNodeLogMapper logMapper;
-    private final ExecutionEngine executionEngine;
-    private final ExecutionPersistenceService persistenceService;
     private final ObjectMapper objectMapper;
     private final java.util.concurrent.ThreadPoolExecutor executionThreadPool;
     private final RateLimitService rateLimitService;
     private final SseEmitterRegistry sseRegistry;
+    private final DistributedLockService lockService;
+    private final ExecutionQueueService queueService;
+    private final ExecutionRunner executionRunner;
+
+    @Value("${flowmind.execution.mode:thread}")
+    private String executionMode;
 
     /**
-     * 提交执行：校验归属/图/入参/并发限制，落 running 行后交线程池异步跑，立即返回 executionId。
+     * 提交执行：立即返回 executionId（202）。
+     * 锁获取失败或 DB 状态检查命中 → 409；消息队列不可达 → 500（行回置 failed）。
      */
     public Long submit(Long workflowId, Map<String, Object> input) {
         Long userId = UserContext.getUserId();
@@ -76,162 +77,71 @@ public class ExecutionService {
 
         List<WorkflowNode> nodes = nodeMapper.selectList(new LambdaQueryWrapper<WorkflowNode>()
                 .eq(WorkflowNode::getWorkflowId, workflowId).orderByAsc(WorkflowNode::getId));
-        List<WorkflowEdge> edges = edgeMapper.selectList(new LambdaQueryWrapper<WorkflowEdge>()
-                .eq(WorkflowEdge::getWorkflowId, workflowId).orderByAsc(WorkflowEdge::getId));
         if (nodes.isEmpty()) {
             throw new BusinessException(ErrorCode.INVALID_GRAPH, "工作流未保存图，无法执行");
         }
-
         Map<String, Object> mergedInput = mergeInputWithDefaults(findInputNode(nodes), input);
 
-        Long running = executionMapper.selectCount(new LambdaQueryWrapper<Execution>()
+        // DB 状态兜底检查（锁是主防线，这里挡掉大部分快路径）
+        Long active = executionMapper.selectCount(new LambdaQueryWrapper<Execution>()
                 .eq(Execution::getWorkflowId, workflowId)
-                .eq(Execution::getStatus, "running"));
-        if (running != null && running > 0) {
+                .in(Execution::getStatus, "queued", "running"));
+        if (active != null && active > 0) {
             throw new BusinessException(ErrorCode.WORKFLOW_RUNNING, "该工作流已有执行在运行，请稍后再试");
         }
 
         Execution execution = new Execution();
         execution.setWorkflowId(workflowId);
         execution.setUserId(userId);
-        execution.setStatus("running");
+        execution.setStatus("queued");
         execution.setInput(writeJson(mergedInput));
         execution.setStartedAt(java.time.LocalDateTime.now());
         executionMapper.insert(execution);
 
-        Long executionId = execution.getId();
-        List<GraphNode> graphNodes = toGraphNodes(nodes);
-        List<GraphEdge> graphEdges = edges.stream()
-                .map(e -> new GraphEdge(e.getSourceNodeKey(), e.getTargetNodeKey(), e.getSourceHandle()))
-                .toList();
+        String lockKey = ExecutionRunner.LOCK_PREFIX + workflowId;
+        String lockValue = String.valueOf(execution.getId());
+        if (!lockService.acquire(lockKey, lockValue, ExecutionRunner.LOCK_TTL_SECONDS)) {
+            executionMapper.deleteById(execution.getId());
+            throw new BusinessException(ErrorCode.WORKFLOW_RUNNING, "该工作流已有执行在运行，请稍后再试");
+        }
+
         try {
-            executionThreadPool.execute(() -> runAsync(executionId, graphNodes, graphEdges, mergedInput));
-        } catch (java.util.concurrent.RejectedExecutionException e) {
-            // 队列已满：把 running 行回置为 failed，避免永久卡 409
-            execution.setStatus("failed");
-            execution.setErrorMessage("执行队列已满，请稍后重试");
-            execution.setFinishedAt(java.time.LocalDateTime.now());
-            executionMapper.updateById(execution);
-            throw new BusinessException(ErrorCode.INTERNAL_ERROR, "执行队列已满，请稍后重试");
-        }
-        return executionId;
-    }
-
-    private void runAsync(Long executionId, List<GraphNode> nodes, List<GraphEdge> edges,
-                          Map<String, Object> input) {
-        sseRegistry.send(executionId, "execution_started",
-                Map.of("executionId", executionId, "totalNodes", nodes.size()));
-        SseExecutionListener listener = new SseExecutionListener(executionId, sseRegistry);
-        ExecutionReport report;
-        try {
-            report = executionEngine.execute(nodes, edges, input, listener);
-        } catch (CycleException e) {
-            report = failedReport(e.getMessage());
-        } catch (Exception e) {
-            log.error("执行引擎异常 executionId={}", executionId, e);
-            report = failedReport("执行引擎异常: " + e.getMessage());
-        }
-        try {
-            persistenceService.persist(executionId, report);
-        } catch (Exception e) {
-            log.error("执行结果落库失败 executionId={}", executionId, e);
-        }
-        if (ExecutionReport.STATUS_SUCCESS.equals(report.getStatus())) {
-            sseRegistry.send(executionId, "execution_completed", Map.of(
-                    "output", report.getOutput() == null ? Map.of() : report.getOutput(),
-                    "totalTokens", report.getTotalTokens(),
-                    "durationMs", report.getDurationMs()));
-        } else {
-            sseRegistry.send(executionId, "execution_failed",
-                    Map.of("error", report.getErrorMessage() == null ? "unknown" : report.getErrorMessage()));
-        }
-        sseRegistry.complete(executionId);
-    }
-
-    private ExecutionReport failedReport(String errorMessage) {
-        ExecutionReport report = new ExecutionReport();
-        report.setStatus(ExecutionReport.STATUS_FAILED);
-        report.setErrorMessage(errorMessage == null ? "unknown" : errorMessage);
-        return report;
-    }
-
-    /** input 必填校验：fields 里无 default 的 key 视为必填（契约 input.fields 无 required 标志）。 */
-    private Map<String, Object> mergeInputWithDefaults(WorkflowNode inputNode, Map<String, Object> input) {
-        Map<String, Object> merged = new LinkedHashMap<>();
-        if (input != null) {
-            merged.putAll(input);
-        }
-        if (inputNode == null) {
-            return merged;
-        }
-        JsonNode fields = readTree(inputNode.getConfig()).path("fields");
-        if (fields.isArray()) {
-            for (JsonNode field : fields) {
-                String key = field.path("key").asText(null);
-                if (key == null || merged.containsKey(key)) {
-                    continue;
-                }
-                JsonNode defaultValue = field.get("default");
-                if (defaultValue != null && !defaultValue.isNull()) {
-                    merged.put(key, objectMapper.convertValue(defaultValue, Object.class));
-                } else {
-                    throw new BusinessException(ErrorCode.INVALID_INPUT, "缺少必填字段: " + key);
-                }
-            }
-        }
-        return merged;
-    }
-
-    private WorkflowNode findInputNode(List<WorkflowNode> nodes) {
-        return nodes.stream()
-                .filter(n -> "input".equals(n.getType()))
-                .findFirst()
-                .orElse(null);
-    }
-
-    private List<GraphNode> toGraphNodes(List<WorkflowNode> nodes) {
-        return nodes.stream()
-                .map(n -> new GraphNode(n.getNodeKey(), n.getType(), n.getName(),
-                        toConfigMap(n.getConfig())))
-                .toList();
-    }
-
-    private Map<String, Object> toConfigMap(String configJson) {
-        if (configJson == null || configJson.isBlank()) {
-            return Map.of();
-        }
-        return objectMapper.convertValue(readTree(configJson),
-                new com.fasterxml.jackson.core.type.TypeReference<LinkedHashMap<String, Object>>() {
+            if ("mqueue".equalsIgnoreCase(executionMode)) {
+                queueService.publish(execution.getId());
+            } else {
+                Long executionId = execution.getId();
+                executionThreadPool.execute(() -> {
+                    try {
+                        executionRunner.runByExecutionId(executionId);
+                    } catch (Exception ex) {
+                        // 线程池模式无重试通道：系统异常直接落终态（Runner 已回置 queued，这里翻 failed）
+                        log.error("线程池执行异常 executionId={}", executionId, ex);
+                        executionRunner.markFailed(executionId, "执行系统异常: " + ex.getMessage());
+                    }
                 });
-    }
-
-    private JsonNode readTree(String json) {
-        try {
-            return objectMapper.readTree(json);
-        } catch (Exception e) {
-            throw new BusinessException(ErrorCode.INVALID_GRAPH, "节点 config 解析失败");
+            }
+        } catch (java.util.concurrent.RejectedExecutionException e) {
+            executionRunner.markFailed(execution.getId(), "执行队列已满，请稍后重试");
+            throw new BusinessException(ErrorCode.INTERNAL_ERROR, "执行队列已满，请稍后重试");
+        } catch (IllegalStateException e) {
+            // publish 失败（MQ 不可达）：行回置 failed 并释放锁
+            executionRunner.markFailed(execution.getId(), "任务提交失败: " + e.getMessage());
+            throw new BusinessException(ErrorCode.INTERNAL_ERROR, "任务提交失败: " + e.getMessage());
         }
-    }
-
-    private String writeJson(Object value) {
-        try {
-            return objectMapper.writeValueAsString(value);
-        } catch (Exception e) {
-            return String.valueOf(value);
-        }
+        return execution.getId();
     }
 
     // ---------------- 查询 ----------------
 
     /**
-     * SSE 订阅：执行已结束则补发终态事件后关闭；running 则等待执行线程推送。
-     * 已知边界：DB 判定 running 与执行线程 complete 之间存在毫秒级竞态，
+     * SSE 订阅：执行已结束则补发终态事件后关闭；queued/running 则等待推送。
+     * 已知边界：DB 判定与执行线程 complete 之间存在毫秒级竞态，
      * 极端情况下订阅方会拿到已关闭的连接（结果仍可查详情，前端需兜底轮询）。
      */
     public org.springframework.web.servlet.mvc.method.annotation.SseEmitter stream(Long id) {
         Execution execution = loadOwned(id);
         org.springframework.web.servlet.mvc.method.annotation.SseEmitter emitter = sseRegistry.getOrCreate(id);
-        if (!"running".equals(execution.getStatus())) {
+        if (isTerminal(execution.getStatus())) {
             if ("success".equals(execution.getStatus())) {
                 sseRegistry.send(id, "execution_completed", Map.of(
                         "output", readTreeOrEmpty(execution.getOutput()),
@@ -244,6 +154,10 @@ public class ExecutionService {
             sseRegistry.complete(id);
         }
         return emitter;
+    }
+
+    private boolean isTerminal(String status) {
+        return "success".equals(status) || "failed".equals(status) || "cancelled".equals(status);
     }
 
     private JsonNode readTreeOrEmpty(String json) {
@@ -353,6 +267,58 @@ public class ExecutionService {
         vo.setDurationMs(row.getDurationMs());
         vo.setErrorMessage(row.getErrorMessage());
         return vo;
+    }
+
+    // ---------------- 提交前校验 ----------------
+
+    /** input 必填校验：fields 里无 default 的 key 视为必填（契约 v1.3）。 */
+    private Map<String, Object> mergeInputWithDefaults(WorkflowNode inputNode, Map<String, Object> input) {
+        Map<String, Object> merged = new LinkedHashMap<>();
+        if (input != null) {
+            merged.putAll(input);
+        }
+        if (inputNode == null) {
+            return merged;
+        }
+        JsonNode fields = readTree(inputNode.getConfig()).path("fields");
+        if (fields.isArray()) {
+            for (JsonNode field : fields) {
+                String key = field.path("key").asText(null);
+                if (key == null || merged.containsKey(key)) {
+                    continue;
+                }
+                JsonNode defaultValue = field.get("default");
+                if (defaultValue != null && !defaultValue.isNull()) {
+                    merged.put(key, objectMapper.convertValue(defaultValue, Object.class));
+                } else {
+                    throw new BusinessException(ErrorCode.INVALID_INPUT, "缺少必填字段: " + key);
+                }
+            }
+        }
+        return merged;
+    }
+
+    private WorkflowNode findInputNode(List<WorkflowNode> nodes) {
+        return nodes.stream()
+                .filter(n -> "input".equals(n.getType()))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private JsonNode readTree(String json) {
+        try {
+            return objectMapper.readTree(json);
+        } catch (Exception e) {
+            throw new BusinessException(ErrorCode.INVALID_GRAPH, "节点 config 解析失败");
+        }
+    }
+
+    private String writeJson(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (Exception e) {
+            return String.valueOf(value);
+        }
     }
 
     private JsonNode parseJson(String json) {

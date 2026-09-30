@@ -7,6 +7,19 @@ spring:
       # 5MB 精确限制在 service 层做（DOCUMENT_TOO_LARGE）；这里放宽避免容器先拦成 500
       max-file-size: 32MB
       max-request-size: 33MB
+  rabbitmq:
+    host: ${RABBITMQ_HOST:127.0.0.1}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:flowmind}
+    password: ${RABBITMQ_PASSWORD:flowmind}
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    listener:
+      simple:
+        acknowledge-mode: manual
+        prefetch: 1
+        concurrency: 2
+        max-concurrency: 4
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: ${DB_URL:jdbc:mysql://localhost:3306/flowmind?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
@@ -27,6 +40,9 @@ flowmind:
   jwt:
     secret: ${JWT_SECRET:flowmind-dev-jwt-secret-key-must-be-at-least-32-bytes!}
     expire-days: 7
+  execution:
+    # thread=进程内线程池（本地无 MQ 默认）；mqueue=RabbitMQ 可靠投递（生产 EXECUTION_MODE=mqueue）
+    mode: ${EXECUTION_MODE:thread}
 
 deepseek:
   base-url: https://api.deepseek.com/v1

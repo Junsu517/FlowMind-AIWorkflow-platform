@@ -119,9 +119,13 @@ class ExecutionServiceTest {
     private Execution awaitDone(Long executionId) {
         await().atMost(java.time.Duration.ofSeconds(30))
                 .pollInterval(java.time.Duration.ofMillis(500))
-                .until(() -> !"running".equals(
-                        executionMapper.selectById(executionId).getStatus()));
+                .until(() -> isTerminal(executionId));
         return executionMapper.selectById(executionId);
+    }
+
+    private boolean isTerminal(Long executionId) {
+        String status = executionMapper.selectById(executionId).getStatus();
+        return "success".equals(status) || "failed".equals(status);
     }
 
     @Test
