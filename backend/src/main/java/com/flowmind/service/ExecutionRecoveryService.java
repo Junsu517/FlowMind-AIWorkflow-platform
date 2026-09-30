@@ -32,14 +32,22 @@ public class ExecutionRecoveryService {
 
     @EventListener(ApplicationReadyEvent.class)
     public void recoverOrphanedExecutions() {
+        // 只翻早于本 JVM 启动的 running：消费者可能与恢复并发启动并已把重投消息置 running，
+        // 那些行不是孤儿（startedAt 已被 Runner 更新为当前时刻，晚于 JVM 启动时间）
+        LocalDateTime jvmStartTime = java.time.Instant.ofEpochMilli(
+                        java.lang.management.ManagementFactory.getRuntimeMXBean().getStartTime())
+                .atZone(java.time.ZoneId.systemDefault()).toLocalDateTime();
         List<Execution> orphans = executionMapper.selectList(
-                new LambdaQueryWrapper<Execution>().eq(Execution::getStatus, "running"));
+                new LambdaQueryWrapper<Execution>()
+                        .eq(Execution::getStatus, "running")
+                        .lt(Execution::getStartedAt, jvmStartTime));
         if (orphans.isEmpty()) {
             log.info("启动恢复：无孤儿 running 执行");
             return;
         }
         int updated = executionMapper.update(null, new LambdaUpdateWrapper<Execution>()
                 .eq(Execution::getStatus, "running")
+                .lt(Execution::getStartedAt, jvmStartTime)
                 .set(Execution::getStatus, "failed")
                 .set(Execution::getErrorMessage, RECOVERY_ERROR_MESSAGE)
                 .set(Execution::getFinishedAt, LocalDateTime.now()));

@@ -63,13 +63,12 @@ public class ExecutionQueueService {
         long tag = message.getMessageProperties().getDeliveryTag();
         Long executionId = parseExecutionId(message);
         if (executionId == null) {
-            channel.basicAck(tag, false);
+            ackQuietly(channel, tag);
             return;
         }
         int retryCount = parseRetryCount(message);
         try {
             executionRunner.runByExecutionId(executionId);
-            channel.basicAck(tag, false);
         } catch (Exception e) {
             log.error("消费失败（第 {} 次）: executionId={}", retryCount + 1, executionId, e);
             if (retryCount < MAX_RETRY) {
@@ -78,15 +77,35 @@ public class ExecutionQueueService {
                     rabbitTemplate.convertAndSend(RabbitMqConfig.EXECUTION_EXCHANGE,
                             RabbitMqConfig.EXECUTION_ROUTING_KEY,
                             buildMessage(executionId, retryCount + 1));
-                    channel.basicAck(tag, false);
+                    ackQuietly(channel, tag);
                 } catch (AmqpException republishError) {
                     log.error("重试消息发布失败，原消息重回队列: executionId={}", executionId, republishError);
-                    channel.basicNack(tag, false, true);
+                    try {
+                        channel.basicNack(tag, false, true);
+                    } catch (IOException nackError) {
+                        log.warn("nack 失败（消息将由 requeue 兜底）: executionId={}", executionId);
+                    }
                 }
             } else {
                 // 达到上限：reject（不重回）→ 经 DLX 死信进 DLQ
-                channel.basicReject(tag, false);
+                try {
+                    channel.basicReject(tag, false);
+                } catch (IOException rejectError) {
+                    log.warn("reject 失败（消息将由 requeue 兜底）: executionId={}", executionId);
+                }
             }
+            return;
+        }
+        // 执行已成功（行已终态落库）：ack 失败仅意味着消息会重投，由幂等消化，不算执行失败
+        ackQuietly(channel, tag);
+    }
+
+    /** ack 与业务执行解耦：channel 抖动（隧道/网络）时只告警，避免误入重试分支。 */
+    private void ackQuietly(Channel channel, long tag) {
+        try {
+            channel.basicAck(tag, false);
+        } catch (Exception e) {
+            log.warn("basicAck 失败（消息将重投，由消费幂等消化）: tag={}, {}", tag, e.getMessage());
         }
     }
 

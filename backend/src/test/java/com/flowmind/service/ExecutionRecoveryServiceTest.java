@@ -32,7 +32,8 @@ class ExecutionRecoveryServiceTest {
         e.setUserId(999999L);
         e.setWorkflowId(999999L);
         e.setStatus(status);
-        e.setStartedAt(LocalDateTime.now());
+        // 早于 JVM 启动时间才会被恢复判定为孤儿（Runner 消费置 running 时会刷新 startedAt）
+        e.setStartedAt(LocalDateTime.now().minusHours(1));
         return e;
     }
 

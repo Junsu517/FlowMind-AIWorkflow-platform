@@ -39,9 +39,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * mqueue 模式提交链路（RabbitTemplate stub，不连真实 MQ）：
  * submit → 行 queued + publish 被调用 + 分布式锁已持有（终态前不释放）。
+ * 端口指向不可达地址：连接拒绝属可恢复错误（listener 容器照常启动），
+ * 且绝不消费真实队列——隧道开启时误连会把服务器队列消息当垃圾 ack 掉。
  * 真实 MQ 联调在统筹开隧道后进行。
  */
-@SpringBootTest(properties = "flowmind.execution.mode=mqueue")
+@SpringBootTest(properties = {
+        "flowmind.execution.mode=mqueue",
+        "spring.rabbitmq.port=56799"
+})
 class ExecutionMqSubmitTest {
 
     @TestConfiguration

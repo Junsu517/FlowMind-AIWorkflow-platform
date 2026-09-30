@@ -64,7 +64,10 @@ public class ExecutionRunner {
         }
         executionMapper.update(null, new LambdaUpdateWrapper<Execution>()
                 .eq(Execution::getId, executionId)
-                .set(Execution::getStatus, "running"));
+                .set(Execution::getStatus, "running")
+                // startedAt 更新为真正开始执行的时刻：也是启动恢复区分
+                // "本 JVM 正在跑"与"上一进程孤儿"的依据（恢复只翻早于 JVM 启动的行）
+                .set(Execution::getStartedAt, LocalDateTime.now()));
 
         ExecutionReport report;
         try {
