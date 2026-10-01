@@ -61,6 +61,8 @@ function seed() {
     // 阶梯 5：知识库 + 文档（契约 v1.5）
     knowledgeBases: [],
     kbDocuments: [],
+    // 阶梯 7：定时计划（契约 v1.7），按 workflowId 存
+    schedules: {},
     idSeq: { user: 1, workflow: 3, execution: 0, knowledgeBase: 0, kbDoc: 0 }
   }
 }
@@ -93,6 +95,7 @@ function normalize(db) {
   if (!db.executions) db.executions = []
   if (!db.knowledgeBases) db.knowledgeBases = []
   if (!db.kbDocuments) db.kbDocuments = []
+  if (!db.schedules) db.schedules = {}
   if (!db.idSeq) db.idSeq = { user: 1, workflow: 1, execution: 0, knowledgeBase: 0, kbDoc: 0 }
   if (db.idSeq.execution == null) db.idSeq.execution = 0
   return db

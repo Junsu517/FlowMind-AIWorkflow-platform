@@ -134,6 +134,16 @@ function publicDocument(d) {
 }
 
 /** 执行记录对外结构（内部字段 snapshot/logs 不透出到 list/detail） */
+function publicSchedule(s) {
+  return {
+    workflowId: s.workflowId,
+    cron: s.cron,
+    enabled: s.enabled,
+    input: s.input ?? null,
+    updatedAt: s.updatedAt ?? null
+  }
+}
+
 function publicExecution(e) {
   return {
     id: e.id,
@@ -147,7 +157,9 @@ function publicExecution(e) {
     durationMs: e.durationMs,
     errorMessage: e.errorMessage ?? null,
     startedAt: e.startedAt,
-    finishedAt: e.finishedAt
+    finishedAt: e.finishedAt,
+    // 契约 v1.7：执行来源，缺省按 manual 处理（兼容旧数据）
+    triggerType: e.triggerType || 'manual'
   }
 }
 
@@ -413,6 +425,7 @@ const routes = [
         errorMessage: null,
         startedAt: iso(),
         finishedAt: null,
+        triggerType: 'manual',
         snapshot: JSON.parse(JSON.stringify(graph.nodes)),
         logs: []
       }
@@ -605,6 +618,78 @@ const routes = [
       )
       if (idx < 0) return fail(config, 404, 'KNOWLEDGE_BASE_NOT_FOUND', '文档不存在')
       db.kbDocuments.splice(idx, 1)
+      saveDb()
+      return settle(config, 204, undefined)
+    }
+  },
+
+  // ---------- 定时计划（契约 v1.7 / 阶梯 7）----------
+  {
+    method: 'get',
+    pattern: /^\/workflows\/(\d+)\/schedule$/,
+    handler(config, body, match) {
+      const user = currentUser(config)
+      if (!user) return fail(config, 401, 'UNAUTHORIZED', '未登录或登录已过期')
+      const db = getDb()
+      const wf = db.workflows.find((w) => w.id === Number(match[1]))
+      if (!wf) return fail(config, 404, 'WORKFLOW_NOT_FOUND', '工作流不存在')
+      if (wf.ownerId !== user.id) return fail(config, 403, 'FORBIDDEN', '无权查看该工作流')
+      const s = db.schedules[wf.id]
+      if (!s) return settle(config, 200, { configured: false })
+      return settle(config, 200, { ...publicSchedule(s), configured: true })
+    }
+  },
+  {
+    method: 'put',
+    pattern: /^\/workflows\/(\d+)\/schedule$/,
+    handler(config, body, match) {
+      const user = currentUser(config)
+      if (!user) return fail(config, 401, 'UNAUTHORIZED', '未登录或登录已过期')
+      const db = getDb()
+      const wf = db.workflows.find((w) => w.id === Number(match[1]))
+      if (!wf) return fail(config, 404, 'WORKFLOW_NOT_FOUND', '工作流不存在')
+      if (wf.ownerId !== user.id) return fail(config, 403, 'FORBIDDEN', '无权修改该工作流')
+
+      const cron = String(body.cron || '').trim()
+      // 与前端同款粗校验：必须 6 段（真实 cron 语义由 Quartz 判定）
+      if (!cron || cron.split(/\s+/).length !== 6) {
+        return fail(config, 400, 'SCHEDULE_INVALID', 'cron 表达式非法（需要 6 段：秒 分 时 日 月 周）')
+      }
+      if (!/^[0-9*,?\-\/LW#]+$/i.test(cron.replace(/\s+/g, ''))) {
+        return fail(config, 400, 'SCHEDULE_INVALID', 'cron 表达式非法（含不允许的字符）')
+      }
+      const enabled = body.enabled !== false
+      const input = body.input && typeof body.input === 'object' ? body.input : null
+
+      const prev = db.schedules[wf.id]
+      const s = {
+        workflowId: wf.id,
+        cron,
+        enabled,
+        input,
+        createdAt: prev?.createdAt || iso(),
+        updatedAt: iso()
+      }
+      db.schedules[wf.id] = s
+      saveDb()
+      return settle(config, 200, { ...publicSchedule(s), configured: true })
+    }
+  },
+  {
+    method: 'delete',
+    pattern: /^\/workflows\/(\d+)\/schedule$/,
+    handler(config, body, match) {
+      const user = currentUser(config)
+      if (!user) return fail(config, 401, 'UNAUTHORIZED', '未登录或登录已过期')
+      const db = getDb()
+      const wf = db.workflows.find((w) => w.id === Number(match[1]))
+      if (!wf) return fail(config, 404, 'WORKFLOW_NOT_FOUND', '工作流不存在')
+      if (wf.ownerId !== user.id) return fail(config, 403, 'FORBIDDEN', '无权修改该工作流')
+      if (!db.schedules[wf.id]) {
+        // 契约 v1.7 没给"无计划时删除"的错误码，这里先用 SCHEDULE_NOT_FOUND（待 GLM 确认）
+        return fail(config, 404, 'SCHEDULE_NOT_FOUND', '该工作流没有定时计划')
+      }
+      delete db.schedules[wf.id]
       saveDb()
       return settle(config, 204, undefined)
     }

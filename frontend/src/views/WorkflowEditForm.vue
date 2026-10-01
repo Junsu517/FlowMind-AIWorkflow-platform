@@ -20,6 +20,11 @@
             </el-dropdown-menu>
           </template>
         </el-dropdown>
+        <!-- 阶梯 7：定时计划（与画布版同入口） -->
+        <el-button :icon="Timer" :class="{ 'has-sched': schedule?.enabled }" @click="scheduleVisible = true">
+          定时
+          <span v-if="schedule?.enabled" class="sched-dot" />
+        </el-button>
         <el-button text :icon="Clock" @click="router.push('/executions')">执行历史</el-button>
         <el-button class="fm-btn-primary" :icon="Select" :loading="saving" @click="save">保存</el-button>
       </div>
@@ -59,6 +64,8 @@
         <DebugPanel ref="debugRef" :workflow-id="id" :nodes="nodes" />
       </template>
     </div>
+
+    <SchedulePanel v-model:visible="scheduleVisible" :workflow-id="id" @saved="onScheduleSaved" />
   </div>
 </template>
 
@@ -66,7 +73,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Plus, Select, MagicStick, Clock } from '@element-plus/icons-vue'
+import { ArrowLeft, Plus, Select, MagicStick, Clock, Timer } from '@element-plus/icons-vue'
 import AppHeader from '@/components/AppHeader.vue'
 import NodeCard from '@/components/editor/NodeCard.vue'
 import DebugPanel from '@/components/editor/DebugPanel.vue'
@@ -74,6 +81,8 @@ import { getWorkflow, updateWorkflow } from '@/api/workflow'
 import { getGraph, saveGraph } from '@/api/graph'
 import { getTools } from '@/api/tools'
 import { getKnowledgeBases } from '@/api/knowledge'
+import { getSchedule } from '@/api/schedule'
+import SchedulePanel from '@/components/SchedulePanel.vue'
 import {
   NODE_TYPES,
   NODE_TYPE_META,
@@ -96,6 +105,9 @@ const tools = ref([])
 const toolsLoading = ref(false)
 const knowledgeBases = ref([])
 const knowledgeLoading = ref(false)
+/** 阶梯 7：定时计划（null = 没有计划） */
+const schedule = ref(null)
+const scheduleVisible = ref(false)
 const loading = ref(true)
 const saving = ref(false)
 const dirty = ref(false)
@@ -240,6 +252,18 @@ async function loadTools() {
   }
 }
 
+async function loadSchedule() {
+  try {
+    schedule.value = await getSchedule(id.value)
+  } catch (e) {
+    schedule.value = null
+  }
+}
+
+function onScheduleSaved(saved) {
+  schedule.value = saved || null
+}
+
 async function loadKnowledge() {
   knowledgeLoading.value = true
   try {
@@ -277,7 +301,7 @@ async function loadAll() {
 }
 
 onMounted(async () => {
-  await Promise.all([loadTools(), loadKnowledge()])
+  await Promise.all([loadTools(), loadKnowledge(), loadSchedule()])
   loadAll()
 })
 
@@ -327,6 +351,21 @@ watch(id, (next, prev) => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* 已启用定时的按钮：绿色小点提示"这个工作流会自己跑" */
+.has-sched {
+  border-color: var(--accent-border);
+  color: var(--text-primary);
+}
+
+.sched-dot {
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--status-success);
+  box-shadow: 0 0 6px var(--status-success);
 }
 
 .editor__body {

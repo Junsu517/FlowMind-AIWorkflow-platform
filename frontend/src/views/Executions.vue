@@ -23,6 +23,19 @@
             </template>
           </el-table-column>
 
+          <!-- 契约 v1.7：执行来源（旧数据没有 triggerType，按手动显示） -->
+          <el-table-column label="来源" width="96">
+            <template #default="{ row }">
+              <span class="src" :class="`src--${triggerType(row)}`">
+                <el-icon class="src__icon">
+                  <Timer v-if="triggerType(row) === 'scheduled'" />
+                  <Mouse v-else />
+                </el-icon>
+                {{ triggerText(row) }}
+              </span>
+            </template>
+          </el-table-column>
+
           <el-table-column label="状态" width="120">
             <template #default="{ row }">
               <span class="status-badge" :class="`status-badge--${row.status}`">
@@ -93,6 +106,18 @@
             </span>
           </div>
           <div class="meta-item">
+            <span class="meta-item__k">来源</span>
+            <span class="meta-item__v">
+              <span class="src" :class="`src--${triggerType(detail)}`">
+                <el-icon class="src__icon">
+                  <Timer v-if="triggerType(detail) === 'scheduled'" />
+                  <Mouse v-else />
+                </el-icon>
+                {{ triggerText(detail) }}
+              </span>
+            </span>
+          </div>
+          <div class="meta-item">
             <span class="meta-item__k">开始 / 结束</span>
             <span class="meta-item__v fm-mono">
               {{ formatDateTime(detail?.startedAt) }} → {{ formatDateTime(detail?.finishedAt) }}
@@ -157,7 +182,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { Refresh, CircleCloseFilled } from '@element-plus/icons-vue'
+import { Refresh, CircleCloseFilled, Timer, Mouse } from '@element-plus/icons-vue'
 import AppHeader from '@/components/AppHeader.vue'
 import ReferenceList from '@/components/editor/ReferenceList.vue'
 import { getExecutions, getExecution, getExecutionLogs } from '@/api/execution'
@@ -212,6 +237,15 @@ function shortJson(value) {
   }
   const text = pretty(target)
   return text.length > 800 ? `${text.slice(0, 800)}\n… （已截断，完整数据见上方 output）` : text
+}
+
+/** 契约 v1.7：triggerType 缺省按 manual 处理，兼容没有该字段的历史数据 */
+function triggerType(row) {
+  return row?.triggerType === 'scheduled' ? 'scheduled' : 'manual'
+}
+
+function triggerText(row) {
+  return triggerType(row) === 'scheduled' ? '定时' : '手动'
 }
 
 function timelineColor(status) {
@@ -334,6 +368,29 @@ onBeforeUnmount(() => {
   background: var(--overlay-3);
   border: 1px solid var(--border-glass);
   color: var(--text-primary);
+}
+
+/* ---------- 执行来源（手动 / 定时） ---------- */
+.src {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  border: 1px solid var(--border-glass);
+  color: var(--text-secondary);
+  background: var(--overlay-3);
+}
+
+.src__icon {
+  font-size: 12px;
+}
+
+.src--scheduled {
+  color: var(--accent-chip-text);
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
 }
 
 .status-badge .dot {

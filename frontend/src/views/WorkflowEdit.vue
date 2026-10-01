@@ -29,6 +29,11 @@
         <el-tooltip content="切换到旧版表单编辑器（保留中）" placement="bottom">
           <el-button text :icon="ListIcon" @click="switchToForm">表单版</el-button>
         </el-tooltip>
+        <!-- 阶梯 7：定时计划（契约 v1.7） -->
+        <el-button :icon="Timer" :class="{ 'has-sched': schedule?.enabled }" @click="scheduleVisible = true">
+          定时
+          <span v-if="schedule?.enabled" class="sched-dot" />
+        </el-button>
         <el-button text :icon="Clock" @click="router.push('/executions')">执行历史</el-button>
         <!-- 删除入口不能只依赖键盘：选中节点或连线后这里出现 -->
         <el-button v-if="hasSelection" :icon="DeleteIcon" @click="deleteSelected">删除所选</el-button>
@@ -103,6 +108,8 @@
         <DebugPanel ref="debugRef" :workflow-id="id" :nodes="debugNodes" @node-status="onNodeStatus" />
       </div>
     </div>
+
+    <SchedulePanel v-model:visible="scheduleVisible" :workflow-id="id" @saved="onScheduleSaved" />
   </div>
 </template>
 
@@ -111,7 +118,9 @@ import { computed, nextTick, onMounted, provide, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, ArrowDown, Select, MagicStick, Clock, VideoPlay } from '@element-plus/icons-vue'
-import { Delete as DeleteIcon } from '@element-plus/icons-vue'
+import { Delete as DeleteIcon, Timer } from '@element-plus/icons-vue'
+import SchedulePanel from '@/components/SchedulePanel.vue'
+import { getSchedule } from '@/api/schedule'
 import { Grid as GridIcon, List as ListIcon } from '@element-plus/icons-vue'
 import { VueFlow, useVueFlow, ConnectionMode } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
@@ -160,6 +169,9 @@ const tools = ref([])
 const toolsLoading = ref(false)
 const knowledgeBases = ref([])
 const knowledgeLoading = ref(false)
+/** 阶梯 7：定时计划（null = 没有计划） */
+const schedule = ref(null)
+const scheduleVisible = ref(false)
 const loading = ref(true)
 const saving = ref(false)
 const dirty = ref(false)
@@ -485,6 +497,18 @@ async function loadTools() {
   }
 }
 
+async function loadSchedule() {
+  try {
+    schedule.value = await getSchedule(id.value)
+  } catch (e) {
+    schedule.value = null
+  }
+}
+
+function onScheduleSaved(saved) {
+  schedule.value = saved || null
+}
+
 /** 与 tools 同一加载方式：编辑器进入时拉一次知识库列表 */
 async function loadKnowledge() {
   knowledgeLoading.value = true
@@ -529,7 +553,7 @@ onMounted(async () => {
   } catch {
     showGuide.value = true
   }
-  await Promise.all([loadTools(), loadKnowledge()])
+  await Promise.all([loadTools(), loadKnowledge(), loadSchedule()])
   if (!formMode.value) loadAll()
 })
 
@@ -586,6 +610,21 @@ watch(formMode, (isForm) => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* 已启用定时的按钮：加一个绿色小点，一眼看出"这个工作流会自己跑" */
+.has-sched {
+  border-color: var(--accent-border);
+  color: var(--text-primary);
+}
+
+.sched-dot {
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--status-success);
+  box-shadow: 0 0 6px var(--status-success);
 }
 
 /* 模板按钮醒目化：渐变描边，让新用户第一眼看到"从模板开始"的入口 */
