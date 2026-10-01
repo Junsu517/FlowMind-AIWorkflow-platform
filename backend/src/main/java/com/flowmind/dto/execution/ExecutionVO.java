@@ -13,6 +13,7 @@ public class ExecutionVO {
     private Long workflowId;
     private String workflowName;
     private String status;
+    private String triggerType;
     private JsonNode input;
     private JsonNode output;
     private Integer totalTokens;

@@ -24,6 +24,7 @@ public enum ErrorCode {
 
     DOCUMENT_TOO_LARGE(400, "DOCUMENT_TOO_LARGE", "文档超过 5MB 上限"),
     DOCUMENT_PARSE_ERROR(400, "DOCUMENT_PARSE_ERROR", "文档解析失败"),
+    SCHEDULE_INVALID(400, "SCHEDULE_INVALID", "cron 表达式非法"),
 
     EMBEDDING_ERROR(502, "EMBEDDING_ERROR", "向量化服务不可用"),
 

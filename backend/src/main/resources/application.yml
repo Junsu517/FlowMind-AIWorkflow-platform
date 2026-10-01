@@ -20,6 +20,10 @@ spring:
         prefetch: 1
         concurrency: 2
         max-concurrency: 4
+  quartz:
+    # 内存模式：Quartz 只负责"到点触发"，触发即入 MQ（持久化由 MQ 承担）；
+    # 重启丢注册由启动时从 DB 重载计划恢复。集群多实例才需要 JDBC 持久化
+    job-store-type: memory
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: ${DB_URL:jdbc:mysql://localhost:3306/flowmind?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}

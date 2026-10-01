@@ -127,6 +127,22 @@ CREATE TABLE IF NOT EXISTS knowledge_documents (
     KEY idx_kb (kb_id)
 ) ENGINE=InnoDB COMMENT='知识库文档表';
 
+-- 定时计划表（阶梯 7，SQL 来自 docs/阶梯7-定时触发技术方案.md §2，统筹定稿）
+CREATE TABLE IF NOT EXISTS workflow_schedules (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    workflow_id BIGINT NOT NULL,
+    cron VARCHAR(64) NOT NULL,
+    enabled TINYINT DEFAULT 1,
+    input TEXT,
+    last_run_at DATETIME NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_workflow (workflow_id)
+) ENGINE=InnoDB COMMENT='工作流定时计划表';
+
+-- executions 加来源列（阶梯 7）。注意：该 ALTER 仅对"全新初始化"的库有效；
+-- 已有 executions 表的环境（本地/生产）手动执行一次，重复执行报 Duplicate column 可忽略
+ALTER TABLE executions ADD COLUMN trigger_type VARCHAR(10) NOT NULL DEFAULT 'manual';
+
 -- 预置演示工具
 INSERT INTO tools (name, display_name, description, method, url_template, params_schema) VALUES
 ('weather_query', '天气查询', '查询指定城市的实时天气情况', 'GET',

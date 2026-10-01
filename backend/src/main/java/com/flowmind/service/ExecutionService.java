@@ -58,10 +58,18 @@ public class ExecutionService {
     private String executionMode;
 
     /**
-     * 提交执行：立即返回 executionId（202）。
-     * 锁获取失败或 DB 状态检查命中 → 409；消息队列不可达 → 500（行回置 failed）。
+     * 手动执行入口（阶梯 7 前的唯一入口）。
      */
     public Long submit(Long workflowId, Map<String, Object> input) {
+        return submit(workflowId, input, "manual");
+    }
+
+    /**
+     * 提交执行：立即返回 executionId（202）。
+     * 锁获取失败或 DB 状态检查命中 → 409；消息队列不可达 → 500（行回置 failed）。
+     * triggerType：manual（手动）/ scheduled（定时），仅落库标记，执行逻辑与 trigger 无关。
+     */
+    public Long submit(Long workflowId, Map<String, Object> input, String triggerType) {
         Long userId = UserContext.getUserId();
         Workflow workflow = workflowMapper.selectById(workflowId);
         if (workflow == null) {
@@ -94,6 +102,7 @@ public class ExecutionService {
         execution.setWorkflowId(workflowId);
         execution.setUserId(userId);
         execution.setStatus("queued");
+        execution.setTriggerType(triggerType);
         execution.setInput(writeJson(mergedInput));
         execution.setStartedAt(java.time.LocalDateTime.now());
         executionMapper.insert(execution);
@@ -244,6 +253,7 @@ public class ExecutionService {
             vo.setWorkflowName(presetNames.getOrDefault(execution.getWorkflowId(), null));
         }
         vo.setStatus(execution.getStatus());
+        vo.setTriggerType(execution.getTriggerType());
         vo.setInput(parseJson(execution.getInput()));
         vo.setOutput(parseJson(execution.getOutput()));
         vo.setTotalTokens(execution.getTotalTokens());

@@ -29,6 +29,7 @@
   | WORKFLOW_RUNNING | 409 | 同一工作流已有执行在运行 |
   | EXECUTION_NOT_FOUND | 404 | 执行记录不存在 |
   | RATE_LIMITED | 429 | 触发限流（execute 每用户每分钟 10 次） |
+  | SCHEDULE_INVALID | 400 | cron 表达式非法（阶梯 7） |
   | INTERNAL_ERROR | 500 | 未预期异常 |
 - 分页参数：`page`（从 1 开始）、`size`（默认 10）；**size 超过 50 时后端截断为 50**（不报错）
 - 分页响应：
@@ -142,6 +143,32 @@
 | llm | `{ "model", "prompt"(支持 {{xxx}} 模板), "temperature", "output_key" }`；阶梯 4 新增可选字段：`"tools": [1, 2]`（tools 表 id 列表，启用 Function Calling）、`"max_tool_rounds": 3`（工具调用最大轮数，默认 3，防死循环；**上限 10，超限钳到 10**）。配置了 tools 时 output 额外含 `"tool_calls"` 数组（每项 toolName/arguments/ok/durationMs/round）；无 tools 走单轮路径，行为不变 |
 | condition | `{ "rules": [{"left":"{{input.city}}","operator":"equals","right":"北京","handle":"beijing"}], "default_handle":"other" }`（operator 支持 equals/not_equals/contains/not_empty） |
 | http | `{ "tool_id": 1, "params": {"city":"{{input.city}}"}, "output_key": "data" }` |
+
+## 定时计划模块（阶梯 7）
+
+### GET /api/workflows/{id}/schedule
+```json
+200 有计划: { "configured": true, "cron": "0 0 9 * * ?", "enabled": true, "input": {...}, "lastRunAt": "...", "nextFireTime": "..." }
+200 无计划: { "configured": false }
+错误: 404 WORKFLOW_NOT_FOUND；403 FORBIDDEN
+```
+> **裁决（2026-10-01）**：无计划返回 `{"configured":false}`（200）而非 404——404 语义会与"工作流不存在"混淆，configured 布尔让前端一行判断。
+
+### PUT /api/workflows/{id}/schedule
+```json
+请求: { "cron": "0 0 9 * * ?", "enabled": true, "input": {"city":"南昌"} }
+200: { "configured": true, "cron": ..., "enabled": ..., "nextFireTime": "..." }
+错误: 400 SCHEDULE_INVALID（cron 非法，message 说明）
+```
+> cron 为 6 段（秒 分 时 日 月 周）。enabled=false 时计划保留但不触发。定时触发复用 execute 链路（锁→queued→MQ），撞车返回 409 由调度侧记录日志。
+
+### DELETE /api/workflows/{id}/schedule
+```
+204（幂等：无计划也 204）
+```
+
+### executions 字段扩展
+- 新增 `triggerType`：`manual`（默认）/ `scheduled`；执行历史列表与详情均带出
 
 ## 执行模块
 

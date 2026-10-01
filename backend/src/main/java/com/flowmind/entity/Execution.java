@@ -23,6 +23,9 @@ public class Execution {
     /** running/success/failed/cancelled */
     private String status;
 
+    /** manual/scheduled（阶梯 7） */
+    private String triggerType;
+
     private String input;
 
     private String output;
