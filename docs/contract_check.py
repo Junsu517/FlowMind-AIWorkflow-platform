@@ -344,6 +344,23 @@ def main():
         kb_items = (r.json() or {}).get("items", [])
         check("知识库列表已无删除项", r.status_code == 200 and not any(i.get("id") == kb_id for i in kb_items), f"got {r.status_code}")
 
+    print("== 6. 定时计划模块（阶梯 7） ==")
+    r = requests.put(f"{API}/workflows/{exec_wf}/schedule", headers=h_a,
+                     json={"cron": "bad cron", "enabled": True}, timeout=10)
+    check("非法 cron 400 SCHEDULE_INVALID", r.status_code == 400 and expect_error(r, "SCHEDULE_INVALID"), f"got {r.status_code} {r.text[:120]}")
+    r = requests.put(f"{API}/workflows/{exec_wf}/schedule", headers=h_a,
+                     json={"cron": "0 0 3 * * ?", "enabled": True, "input": {"city": "Nanchang"}}, timeout=10)
+    body = r.json() if r.status_code == 200 else {}
+    check("保存计划 200 且带 nextFireTime", r.status_code == 200 and body.get("configured") is True and "nextFireTime" in body, f"got {r.status_code} {r.text[:150]}")
+    r = requests.get(f"{API}/workflows/{exec_wf}/schedule", headers=h_a, timeout=10)
+    body = r.json() if r.status_code == 200 else {}
+    check("读计划 configured=true 且 cron 一致", r.status_code == 200 and body.get("configured") is True and body.get("cron") == "0 0 3 * * ?", f"got {r.status_code} {r.text[:150]}")
+    r = requests.delete(f"{API}/workflows/{exec_wf}/schedule", headers=h_a, timeout=10)
+    check("删除计划 204", r.status_code == 204, f"got {r.status_code}")
+    r = requests.get(f"{API}/workflows/{exec_wf}/schedule", headers=h_a, timeout=10)
+    body = r.json() if r.status_code == 200 else {}
+    check("删除后 configured=false", r.status_code == 200 and body.get("configured") is False, f"got {r.status_code} {r.text[:120]}")
+
     print()
     if failures:
         print(f"结果: FAIL（{len(failures)} 项未通过）")
