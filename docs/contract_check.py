@@ -361,6 +361,41 @@ def main():
     body = r.json() if r.status_code == 200 else {}
     check("删除后 configured=false", r.status_code == 200 and body.get("configured") is False, f"got {r.status_code} {r.text[:120]}")
 
+    print("== 7. 工作流发布模块（阶梯 8） ==")
+    r = requests.post(f"{API}/workflows/{exec_wf}/publish", headers=h_a, timeout=10)
+    pub = r.json() if r.status_code == 201 else {}
+    api_key = pub.get("apiKey")
+    check("发布 201 且返回 64 位 apiKey", r.status_code == 201 and isinstance(api_key, str) and len(api_key) == 64, f"got {r.status_code} {r.text[:120]}")
+    r = requests.post(f"{API}/workflows/{exec_wf}/publish", headers=h_a, timeout=10)
+    body = r.json() if r.status_code == 200 else {}
+    check("二次发布 200 且不重暴露 key", r.status_code == 200 and body.get("apiKey") is None and "runUrl" in body, f"got {r.status_code} {r.text[:120]}")
+    r = requests.get(f"{API}/workflows/{exec_wf}/publish", headers=h_a, timeout=10)
+    body = r.json() if r.status_code == 200 else {}
+    check("读发布状态 published=true 且无真实 key", r.status_code == 200 and body.get("published") is True and "{apiKey}" in body.get("runUrl", ""), f"got {r.status_code} {r.text[:150]}")
+    if api_key:
+        r = requests.post(f"{API}/public/run/{api_key}", json={"input": {"city": "Nanchang"}}, timeout=10)
+        pub_exec = r.json().get("executionId") if r.status_code == 202 else None
+        check("公开调用 202（无 JWT 仅 key）", pub_exec is not None, f"got {r.status_code} {r.text[:120]}")
+        if pub_exec:
+            terminal = None
+            for _ in range(30):
+                time.sleep(3)
+                r = requests.get(f"{API}/public/run/{api_key}/executions/{pub_exec}", timeout=10)
+                if r.status_code != 200:
+                    break
+                detail = r.json()
+                if detail.get("status") in ("success", "failed", "cancelled"):
+                    terminal = detail
+                    break
+            check("公开调用到达终态且成功", terminal is not None and terminal.get("status") == "success", f"terminal={str(terminal)[:120]}")
+    r = requests.post(f"{API}/public/run/0000000000000000badkey", json={"input": {}}, timeout=10)
+    check("坏 key 401 INVALID_API_KEY", r.status_code == 401 and expect_error(r, "INVALID_API_KEY"), f"got {r.status_code} {r.text[:120]}")
+    r = requests.delete(f"{API}/workflows/{exec_wf}/publish", headers=h_a, timeout=10)
+    check("吊销 204", r.status_code == 204, f"got {r.status_code}")
+    if api_key:
+        r = requests.post(f"{API}/public/run/{api_key}", json={"input": {}}, timeout=10)
+        check("吊销后原 key 401", r.status_code == 401 and expect_error(r, "INVALID_API_KEY"), f"got {r.status_code} {r.text[:120]}")
+
     print()
     if failures:
         print(f"结果: FAIL（{len(failures)} 项未通过）")
