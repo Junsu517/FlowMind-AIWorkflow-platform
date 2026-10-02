@@ -30,6 +30,8 @@
   | EXECUTION_NOT_FOUND | 404 | 执行记录不存在 |
   | RATE_LIMITED | 429 | 触发限流（execute 每用户每分钟 10 次） |
   | SCHEDULE_INVALID | 400 | cron 表达式非法（阶梯 7） |
+  | INVALID_API_KEY | 401 | API Key 无效或已吊销（阶梯 8） |
+  | API_RATE_LIMITED | 429 | API Key 调用限流（阶梯 8） |
   | INTERNAL_ERROR | 500 | 未预期异常 |
 - 分页参数：`page`（从 1 开始）、`size`（默认 10）；**size 超过 50 时后端截断为 50**（不报错）
 - 分页响应：
@@ -168,7 +170,40 @@
 ```
 
 ### executions 字段扩展
-- 新增 `triggerType`：`manual`（默认）/ `scheduled`；执行历史列表与详情均带出
+- 新增 `triggerType`：`manual`（默认）/ `scheduled` / `api`；执行历史列表与详情均带出
+
+## 工作流发布模块（阶梯 8）
+
+### POST /api/workflows/{id}/publish
+```json
+201 首次发布: { "published": true, "apiKey": "64位hex", "runUrl": "http://host/api/public/run/{64位hex}" }
+200 已发布:   { "published": true, "apiKey": null, "runUrl": "..." }
+```
+> **apiKey 仅首次发布响应中完整展示一次**；之后任何接口不再返回真实 key（GET 用 `{apiKey}` 占位模板）。
+
+### GET /api/workflows/{id}/publish
+```json
+200 已发布: { "published": true, "runUrl": ".../run/{apiKey}", "createdAt": "..." }
+200 未发布: { "published": false }
+```
+
+### DELETE /api/workflows/{id}/publish
+```
+204（吊销幂等；工作流删除时级联吊销）
+```
+
+### 公开调用端点（无需 JWT，API Key 鉴权，AuthInterceptor 白名单）
+
+```json
+POST /api/public/run/{apiKey}   body: {"input": {...}}
+  202: { "executionId": 356 }
+  错误: 401 INVALID_API_KEY；429 API_RATE_LIMITED；400 INVALID_INPUT；409 WORKFLOW_RUNNING
+
+GET /api/public/run/{apiKey}/executions/{executionId}
+  200: { "status": "success", "output": {...}, "errorMessage": null, "totalTokens": 285 }
+  错误: 401 INVALID_API_KEY；404 EXECUTION_NOT_FOUND（含跨 key 越权查询）
+```
+> **裁决（2026-10-02）**：① API 调用同时受 **key 级限流（10 次/分）与 owner 用户级限流（10 次/分）**双重约束——保守设计，防外部调用挤占主人配额 ② 被 409 拒绝的请求同样计入限流计数（与用户级防刷口径一致）③ 结果获取为轮询（调用方循环查），同步阻塞调用是二期 ④ runUrl 的 host 取 X-Forwarded-Host/X-Forwarded-Proto（nginx 反代下自动公网地址），兜底请求 Host
 
 ## 执行模块
 

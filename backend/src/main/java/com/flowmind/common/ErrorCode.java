@@ -31,6 +31,9 @@ public enum ErrorCode {
     WORKFLOW_RUNNING(409, "WORKFLOW_RUNNING", "同一工作流已有执行在运行"),
 
     RATE_LIMITED(429, "RATE_LIMITED", "操作过于频繁，请稍后再试"),
+    API_RATE_LIMITED(429, "API_RATE_LIMITED", "API 调用过于频繁，请稍后再试"),
+
+    INVALID_API_KEY(401, "INVALID_API_KEY", "API Key 无效"),
 
     INTERNAL_ERROR(500, "INTERNAL_ERROR", "服务器内部错误");
 

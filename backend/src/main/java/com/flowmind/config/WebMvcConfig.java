@@ -29,7 +29,9 @@ public class WebMvcConfig implements WebMvcConfigurer {
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(authInterceptor)
                 .addPathPatterns("/api/**")
-                .excludePathPatterns("/api/auth/register", "/api/auth/login");
+                .excludePathPatterns("/api/auth/register", "/api/auth/login")
+                // 外部调用入口走 API Key 鉴权（阶梯 8），不走 JWT
+                .excludePathPatterns("/api/public/run/**");
     }
 
     @Override

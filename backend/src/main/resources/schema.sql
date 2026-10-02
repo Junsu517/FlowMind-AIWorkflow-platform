@@ -143,6 +143,16 @@ CREATE TABLE IF NOT EXISTS workflow_schedules (
 -- 已有 executions 表的环境（本地/生产）手动执行一次，重复执行报 Duplicate column 可忽略
 ALTER TABLE executions ADD COLUMN trigger_type VARCHAR(10) NOT NULL DEFAULT 'manual';
 
+-- 工作流 API 发布密钥表（阶梯 8，SQL 来自 docs/阶梯8-HTTPAPI发布技术方案.md §2，统筹定稿）
+CREATE TABLE IF NOT EXISTS workflow_api_keys (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    workflow_id BIGINT NOT NULL,
+    api_key VARCHAR(64) NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_workflow (workflow_id),
+    UNIQUE KEY uk_key (api_key)
+) ENGINE=InnoDB COMMENT='工作流 API 密钥表';
+
 -- 预置演示工具
 INSERT INTO tools (name, display_name, description, method, url_template, params_schema) VALUES
 ('weather_query', '天气查询', '查询指定城市的实时天气情况', 'GET',

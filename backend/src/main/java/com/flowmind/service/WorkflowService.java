@@ -16,8 +16,10 @@ import com.flowmind.dto.workflow.WorkflowCreateRequest;
 import com.flowmind.dto.workflow.WorkflowUpdateRequest;
 import com.flowmind.dto.workflow.WorkflowVO;
 import com.flowmind.entity.Workflow;
+import com.flowmind.entity.WorkflowApiKey;
 import com.flowmind.entity.WorkflowEdge;
 import com.flowmind.entity.WorkflowNode;
+import com.flowmind.mapper.WorkflowApiKeyMapper;
 import com.flowmind.mapper.WorkflowEdgeMapper;
 import com.flowmind.mapper.WorkflowMapper;
 import com.flowmind.mapper.WorkflowNodeMapper;
@@ -34,6 +36,7 @@ public class WorkflowService {
     private final WorkflowMapper workflowMapper;
     private final WorkflowNodeMapper nodeMapper;
     private final WorkflowEdgeMapper edgeMapper;
+    private final WorkflowApiKeyMapper apiKeyMapper;
     private final GraphValidator graphValidator;
     private final ObjectMapper objectMapper;
 
@@ -82,6 +85,9 @@ public class WorkflowService {
         workflowMapper.deleteById(id);
         nodeMapper.delete(new LambdaQueryWrapper<WorkflowNode>().eq(WorkflowNode::getWorkflowId, id));
         edgeMapper.delete(new LambdaQueryWrapper<WorkflowEdge>().eq(WorkflowEdge::getWorkflowId, id));
+        // 发布密钥随工作流失效（执行历史按契约保留）
+        apiKeyMapper.delete(new LambdaQueryWrapper<WorkflowApiKey>()
+                .eq(WorkflowApiKey::getWorkflowId, id));
     }
 
     /**
