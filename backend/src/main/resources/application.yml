@@ -47,6 +47,9 @@ flowmind:
   execution:
     # thread=进程内线程池（本地无 MQ 默认）；mqueue=RabbitMQ 可靠投递（生产 EXECUTION_MODE=mqueue）
     mode: ${EXECUTION_MODE:thread}
+  # 对外 runUrl 的路径前缀：生产 nginx 挂在 /fm/ 下，env 设 PUBLIC_PATH_PREFIX=/fm；
+  # 默认空 = 本地直连 8080 行为不变
+  public-path-prefix: ${PUBLIC_PATH_PREFIX:}
 
 deepseek:
   base-url: https://api.deepseek.com/v1
