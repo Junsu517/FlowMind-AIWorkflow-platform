@@ -16,6 +16,12 @@ const routes = [
     meta: { title: '注册', guestOnly: true }
   },
   {
+    path: '/dashboard',
+    name: 'dashboard',
+    component: () => import('@/views/Dashboard.vue'),
+    meta: { title: '仪表盘', requiresAuth: true }
+  },
+  {
     path: '/workflows',
     name: 'workflow-list',
     component: () => import('@/views/WorkflowList.vue'),

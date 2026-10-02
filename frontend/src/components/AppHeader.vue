@@ -6,6 +6,7 @@
     </div>
 
     <nav class="header__nav">
+      <router-link to="/dashboard" class="header__link">仪表盘</router-link>
       <router-link to="/workflows" class="header__link">我的工作流</router-link>
       <router-link to="/knowledge" class="header__link">知识库</router-link>
       <router-link to="/executions" class="header__link">执行历史</router-link>

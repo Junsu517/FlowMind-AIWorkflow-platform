@@ -654,6 +654,73 @@ const routes = [
     }
   },
 
+  // ---------- 统计仪表盘（契约 v1.9 / 阶梯 9）----------
+  {
+    method: 'get',
+    pattern: /^\/stats\/dashboard$/,
+    handler(config) {
+      const user = currentUser(config)
+      if (!user) return fail(config, 401, 'UNAUTHORIZED', '未登录或登录已过期')
+      const db = getDb()
+
+      const mine = new Set(db.workflows.filter((w) => w.ownerId === user.id).map((w) => w.id))
+      const execs = db.executions.filter((e) => mine.has(e.workflowId))
+
+      const success = execs.filter((e) => e.status === 'success').length
+      const failed = execs.filter((e) => e.status === 'failed').length
+      const settled = success + failed // 进行中的不计入成功率分母
+
+      const summary = {
+        totalExecutions: execs.length,
+        successRate: settled ? Number((success / settled).toFixed(4)) : 0,
+        totalTokens: execs.reduce((s, e) => s + (e.totalTokens || 0), 0),
+        totalCost: Number(execs.reduce((s, e) => s + (e.totalCost || 0), 0).toFixed(6)),
+        activeWorkflows: mine.size,
+        knowledgeDocs: (db.kbDocuments || []).filter((d) =>
+          (db.knowledgeBases || []).some(
+            (k) => k.id === d.kbId && k.userId === user.id
+          )
+        ).length,
+        publishedApis: Object.keys(db.apiKeys || {}).filter((id) => mine.has(Number(id))).length,
+        enabledSchedules: Object.entries(db.schedules || {}).filter(
+          ([id, s]) => mine.has(Number(id)) && s.enabled
+        ).length
+      }
+
+      // 近 30 天（含今天），没有数据的日期补 0
+      const daily = []
+      for (let i = 29; i >= 0; i--) {
+        const d = new Date()
+        d.setDate(d.getDate() - i)
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+          d.getDate()
+        ).padStart(2, '0')}`
+        const day = execs.filter((e) => String(e.startedAt || '').slice(0, 10) === key)
+        daily.push({
+          date: key,
+          executions: day.length,
+          tokens: day.reduce((s, e) => s + (e.totalTokens || 0), 0)
+        })
+      }
+
+      const sourceDist = { manual: 0, scheduled: 0, api: 0 }
+      for (const e of execs) {
+        const t = e.triggerType === 'scheduled' || e.triggerType === 'api' ? e.triggerType : 'manual'
+        sourceDist[t] += 1
+      }
+
+      const byWf = new Map()
+      for (const e of execs) {
+        const cur = byWf.get(e.workflowId) || { workflowId: e.workflowId, name: e.workflowName, executions: 0 }
+        cur.executions += 1
+        byWf.set(e.workflowId, cur)
+      }
+      const topWorkflows = [...byWf.values()].sort((a, b) => b.executions - a.executions).slice(0, 5)
+
+      return settle(config, 200, { summary, daily, sourceDist, topWorkflows })
+    }
+  },
+
   // ---------- 发布为 HTTP API（契约 v1.8 / 阶梯 8）----------
   {
     method: 'get',
