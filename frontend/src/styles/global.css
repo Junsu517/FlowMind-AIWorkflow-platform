@@ -52,6 +52,10 @@
   --accent-glow-strong: rgba(99, 102, 241, 0.35);
   --accent-glow-soft: rgba(99, 102, 241, 0.12);
   --accent-2-glow: rgba(34, 211, 238, 0.5);
+  /* 青色系的浅底/描边/文字，给"外部 API 调用"这类标签用（阶梯 8） */
+  --accent-2-soft: rgba(34, 211, 238, 0.14);
+  --accent-2-border: rgba(34, 211, 238, 0.32);
+  --accent-2-text: #67e8f9;
   --focus-ring: 0 0 0 3px rgba(99, 102, 241, 0.15);
   --accent-chip-text: #b9bcf7;
 

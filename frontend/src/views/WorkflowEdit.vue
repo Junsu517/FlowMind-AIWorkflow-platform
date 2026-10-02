@@ -34,6 +34,11 @@
           定时
           <span v-if="schedule?.enabled" class="sched-dot" />
         </el-button>
+        <!-- 阶梯 8：发布为 HTTP API（契约 v1.8） -->
+        <el-button :icon="Promotion" :class="{ 'has-sched': publishInfo }" @click="publishVisible = true">
+          发布
+          <span v-if="publishInfo" class="pub-dot" />
+        </el-button>
         <el-button text :icon="Clock" @click="router.push('/executions')">执行历史</el-button>
         <!-- 删除入口不能只依赖键盘：选中节点或连线后这里出现 -->
         <el-button v-if="hasSelection" :icon="DeleteIcon" @click="deleteSelected">删除所选</el-button>
@@ -110,6 +115,11 @@
     </div>
 
     <SchedulePanel v-model:visible="scheduleVisible" :workflow-id="id" @saved="onScheduleSaved" />
+    <PublishPanel
+      v-model:visible="publishVisible"
+      :workflow-id="id"
+      @changed="onPublishChanged"
+    />
   </div>
 </template>
 
@@ -118,9 +128,11 @@ import { computed, nextTick, onMounted, provide, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, ArrowDown, Select, MagicStick, Clock, VideoPlay } from '@element-plus/icons-vue'
-import { Delete as DeleteIcon, Timer } from '@element-plus/icons-vue'
+import { Delete as DeleteIcon, Timer, Promotion } from '@element-plus/icons-vue'
 import SchedulePanel from '@/components/SchedulePanel.vue'
+import PublishPanel from '@/components/PublishPanel.vue'
 import { getSchedule } from '@/api/schedule'
+import { getPublish } from '@/api/publish'
 import { Grid as GridIcon, List as ListIcon } from '@element-plus/icons-vue'
 import { VueFlow, useVueFlow, ConnectionMode } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
@@ -172,6 +184,9 @@ const knowledgeLoading = ref(false)
 /** 阶梯 7：定时计划（null = 没有计划） */
 const schedule = ref(null)
 const scheduleVisible = ref(false)
+/** 阶梯 8：发布状态（null = 未发布） */
+const publishInfo = ref(null)
+const publishVisible = ref(false)
 const loading = ref(true)
 const saving = ref(false)
 const dirty = ref(false)
@@ -509,6 +524,18 @@ function onScheduleSaved(saved) {
   schedule.value = saved || null
 }
 
+async function loadPublish() {
+  try {
+    publishInfo.value = await getPublish(id.value)
+  } catch (e) {
+    publishInfo.value = null
+  }
+}
+
+function onPublishChanged(published) {
+  publishInfo.value = published ? publishInfo.value || { published: true } : null
+}
+
 /** 与 tools 同一加载方式：编辑器进入时拉一次知识库列表 */
 async function loadKnowledge() {
   knowledgeLoading.value = true
@@ -553,7 +580,7 @@ onMounted(async () => {
   } catch {
     showGuide.value = true
   }
-  await Promise.all([loadTools(), loadKnowledge(), loadSchedule()])
+  await Promise.all([loadTools(), loadKnowledge(), loadSchedule(), loadPublish()])
   if (!formMode.value) loadAll()
 })
 
@@ -625,6 +652,16 @@ watch(formMode, (isForm) => {
   border-radius: 50%;
   background: var(--status-success);
   box-shadow: 0 0 6px var(--status-success);
+}
+
+/* 已发布的小点用品牌紫，和绿色的"已定时"区分 */
+.pub-dot {
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--accent-2);
+  box-shadow: 0 0 6px var(--accent-2-glow);
 }
 
 /* 模板按钮醒目化：渐变描边，让新用户第一眼看到"从模板开始"的入口 */

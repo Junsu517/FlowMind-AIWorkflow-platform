@@ -29,6 +29,7 @@
               <span class="src" :class="`src--${triggerType(row)}`">
                 <el-icon class="src__icon">
                   <Timer v-if="triggerType(row) === 'scheduled'" />
+                  <Link v-else-if="triggerType(row) === 'api'" />
                   <Mouse v-else />
                 </el-icon>
                 {{ triggerText(row) }}
@@ -111,6 +112,7 @@
               <span class="src" :class="`src--${triggerType(detail)}`">
                 <el-icon class="src__icon">
                   <Timer v-if="triggerType(detail) === 'scheduled'" />
+                  <Link v-else-if="triggerType(detail) === 'api'" />
                   <Mouse v-else />
                 </el-icon>
                 {{ triggerText(detail) }}
@@ -182,7 +184,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { Refresh, CircleCloseFilled, Timer, Mouse } from '@element-plus/icons-vue'
+import { Refresh, CircleCloseFilled, Timer, Mouse, Link } from '@element-plus/icons-vue'
 import AppHeader from '@/components/AppHeader.vue'
 import ReferenceList from '@/components/editor/ReferenceList.vue'
 import { getExecutions, getExecution, getExecutionLogs } from '@/api/execution'
@@ -239,13 +241,18 @@ function shortJson(value) {
   return text.length > 800 ? `${text.slice(0, 800)}\n… （已截断，完整数据见上方 output）` : text
 }
 
-/** 契约 v1.7：triggerType 缺省按 manual 处理，兼容没有该字段的历史数据 */
+/**
+ * 执行来源：契约 v1.7 的 manual/scheduled + 契约 v1.8 新增的 api（外部调用）。
+ * 缺省按 manual 处理，兼容没有该字段的历史数据。
+ */
 function triggerType(row) {
-  return row?.triggerType === 'scheduled' ? 'scheduled' : 'manual'
+  const t = row?.triggerType
+  if (t === 'scheduled' || t === 'api') return t
+  return 'manual'
 }
 
 function triggerText(row) {
-  return triggerType(row) === 'scheduled' ? '定时' : '手动'
+  return { scheduled: '定时', api: 'API', manual: '手动' }[triggerType(row)]
 }
 
 function timelineColor(status) {
@@ -391,6 +398,13 @@ onBeforeUnmount(() => {
   color: var(--accent-chip-text);
   border-color: var(--accent-border);
   background: var(--accent-soft);
+}
+
+/* 契约 v1.8：外部 API 调用，用青色（accent-2）区分于靛蓝的定时 */
+.src--api {
+  color: var(--accent-2-text);
+  border-color: var(--accent-2-border);
+  background: var(--accent-2-soft);
 }
 
 .status-badge .dot {

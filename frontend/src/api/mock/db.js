@@ -63,6 +63,8 @@ function seed() {
     kbDocuments: [],
     // 阶梯 7：定时计划（契约 v1.7），按 workflowId 存
     schedules: {},
+    // 阶梯 8：发布 API Key（契约 v1.8），按 workflowId 存 { apiKey, createdAt }
+    apiKeys: {},
     idSeq: { user: 1, workflow: 3, execution: 0, knowledgeBase: 0, kbDoc: 0 }
   }
 }
@@ -96,6 +98,7 @@ function normalize(db) {
   if (!db.knowledgeBases) db.knowledgeBases = []
   if (!db.kbDocuments) db.kbDocuments = []
   if (!db.schedules) db.schedules = {}
+  if (!db.apiKeys) db.apiKeys = {}
   if (!db.idSeq) db.idSeq = { user: 1, workflow: 1, execution: 0, knowledgeBase: 0, kbDoc: 0 }
   if (db.idSeq.execution == null) db.idSeq.execution = 0
   return db

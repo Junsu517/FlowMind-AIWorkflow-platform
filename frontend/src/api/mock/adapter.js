@@ -134,6 +134,16 @@ function publicDocument(d) {
 }
 
 /** 执行记录对外结构（内部字段 snapshot/logs 不透出到 list/detail） */
+/** 阶梯 8：发布状态（对外永远不带 apiKey） */
+function publicPublish(workflowId, rec) {
+  return {
+    published: true,
+    workflowId,
+    runUrl: `${location.origin}/api/public/run/${rec.apiKey}`,
+    createdAt: rec.createdAt ?? null
+  }
+}
+
 function publicSchedule(s) {
   return {
     workflowId: s.workflowId,
@@ -620,6 +630,123 @@ const routes = [
       db.kbDocuments.splice(idx, 1)
       saveDb()
       return settle(config, 204, undefined)
+    }
+  },
+
+  // ---------- 发布为 HTTP API（契约 v1.8 / 阶梯 8）----------
+  {
+    method: 'get',
+    pattern: /^\/workflows\/(\d+)\/publish$/,
+    handler(config, body, match) {
+      const user = currentUser(config)
+      if (!user) return fail(config, 401, 'UNAUTHORIZED', '未登录或登录已过期')
+      const db = getDb()
+      const wf = db.workflows.find((w) => w.id === Number(match[1]))
+      if (!wf) return fail(config, 404, 'WORKFLOW_NOT_FOUND', '工作流不存在')
+      if (wf.ownerId !== user.id) return fail(config, 403, 'FORBIDDEN', '无权查看该工作流')
+      const k = db.apiKeys[wf.id]
+      if (!k) return settle(config, 200, { published: false, runUrl: null, createdAt: null })
+      return settle(config, 200, publicPublish(wf.id, k))
+    }
+  },
+  {
+    method: 'post',
+    pattern: /^\/workflows\/(\d+)\/publish$/,
+    handler(config, body, match) {
+      const user = currentUser(config)
+      if (!user) return fail(config, 401, 'UNAUTHORIZED', '未登录或登录已过期')
+      const db = getDb()
+      const wf = db.workflows.find((w) => w.id === Number(match[1]))
+      if (!wf) return fail(config, 404, 'WORKFLOW_NOT_FOUND', '工作流不存在')
+      if (wf.ownerId !== user.id) return fail(config, 403, 'FORBIDDEN', '无权发布该工作流')
+
+      const exist = db.apiKeys[wf.id]
+      // 契约 v1.8：已发布时只回 runUrl（200），不重复暴露 key
+      if (exist) return settle(config, 200, publicPublish(wf.id, exist))
+
+      const apiKey = `fmk_${Math.random().toString(16).slice(2)}${Math.random().toString(16).slice(2)}`
+      const rec = { apiKey, createdAt: iso() }
+      db.apiKeys[wf.id] = rec
+      saveDb()
+      return settle(config, 201, { ...publicPublish(wf.id, rec), apiKey })
+    }
+  },
+  {
+    method: 'delete',
+    pattern: /^\/workflows\/(\d+)\/publish$/,
+    handler(config, body, match) {
+      const user = currentUser(config)
+      if (!user) return fail(config, 401, 'UNAUTHORIZED', '未登录或登录已过期')
+      const db = getDb()
+      const wf = db.workflows.find((w) => w.id === Number(match[1]))
+      if (!wf) return fail(config, 404, 'WORKFLOW_NOT_FOUND', '工作流不存在')
+      if (wf.ownerId !== user.id) return fail(config, 403, 'FORBIDDEN', '无权操作该工作流')
+      delete db.apiKeys[wf.id] // 幂等：没发布过也返回 204
+      saveDb()
+      return settle(config, 204, undefined)
+    }
+  },
+  // ---- public run（外部系统调用，用 apiKey 鉴权，不需要登录态）----
+  {
+    method: 'post',
+    pattern: /^\/public\/run\/([^/]+)$/,
+    handler(config, body, match) {
+      const db = getDb()
+      const key = match[1]
+      const entry = Object.entries(db.apiKeys).find(([, v]) => v.apiKey === key)
+      if (!entry) return fail(config, 401, 'INVALID_API_KEY', 'API Key 无效或已被吊销')
+      const wfId = Number(entry[0])
+      const graph = db.graphs[wfId]
+      if (!graph || !graph.nodes.length) {
+        return fail(config, 400, 'INVALID_GRAPH', '该工作流的图为空，无法执行')
+      }
+      const exec = {
+        id: nextId('execution'),
+        workflowId: wfId,
+        workflowName: db.workflows.find((w) => w.id === wfId)?.name ?? null,
+        status: 'queued',
+        input: body?.input || {},
+        output: {},
+        totalTokens: 0,
+        totalCost: 0,
+        durationMs: 0,
+        errorMessage: null,
+        startedAt: iso(),
+        finishedAt: null,
+        triggerType: 'api',
+        snapshot: JSON.parse(JSON.stringify(graph.nodes)),
+        logs: []
+      }
+      db.executions.unshift(exec)
+      saveDb()
+      setTimeout(() => {
+        const e = getDb().executions.find((x) => x.id === exec.id)
+        if (e && e.status === 'queued') {
+          e.status = 'running'
+          saveDb()
+        }
+      }, 1500)
+      return settle(config, 202, { executionId: exec.id })
+    }
+  },
+  {
+    method: 'get',
+    pattern: /^\/public\/run\/([^/]+)\/executions\/(\d+)$/,
+    handler(config, body, match) {
+      const db = getDb()
+      const key = match[1]
+      const entry = Object.entries(db.apiKeys).find(([, v]) => v.apiKey === key)
+      if (!entry) return fail(config, 401, 'INVALID_API_KEY', 'API Key 无效或已被吊销')
+      const exec = db.executions.find((e) => e.id === Number(match[2]))
+      if (!exec || exec.workflowId !== Number(entry[0])) {
+        return fail(config, 404, 'EXECUTION_NOT_FOUND', '执行记录不存在')
+      }
+      return settle(config, 200, {
+        status: exec.status,
+        output: exec.output || null,
+        errorMessage: exec.errorMessage ?? null,
+        totalTokens: exec.totalTokens ?? 0
+      })
     }
   },
 

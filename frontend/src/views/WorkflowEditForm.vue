@@ -25,6 +25,11 @@
           定时
           <span v-if="schedule?.enabled" class="sched-dot" />
         </el-button>
+        <!-- 阶梯 8：发布为 HTTP API（与画布版同入口） -->
+        <el-button :icon="Promotion" :class="{ 'has-sched': publishInfo }" @click="publishVisible = true">
+          发布
+          <span v-if="publishInfo" class="pub-dot" />
+        </el-button>
         <el-button text :icon="Clock" @click="router.push('/executions')">执行历史</el-button>
         <el-button class="fm-btn-primary" :icon="Select" :loading="saving" @click="save">保存</el-button>
       </div>
@@ -66,6 +71,7 @@
     </div>
 
     <SchedulePanel v-model:visible="scheduleVisible" :workflow-id="id" @saved="onScheduleSaved" />
+    <PublishPanel v-model:visible="publishVisible" :workflow-id="id" @changed="onPublishChanged" />
   </div>
 </template>
 
@@ -73,7 +79,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Plus, Select, MagicStick, Clock, Timer } from '@element-plus/icons-vue'
+import { ArrowLeft, Plus, Select, MagicStick, Clock, Timer, Promotion } from '@element-plus/icons-vue'
 import AppHeader from '@/components/AppHeader.vue'
 import NodeCard from '@/components/editor/NodeCard.vue'
 import DebugPanel from '@/components/editor/DebugPanel.vue'
@@ -82,7 +88,9 @@ import { getGraph, saveGraph } from '@/api/graph'
 import { getTools } from '@/api/tools'
 import { getKnowledgeBases } from '@/api/knowledge'
 import { getSchedule } from '@/api/schedule'
+import { getPublish } from '@/api/publish'
 import SchedulePanel from '@/components/SchedulePanel.vue'
+import PublishPanel from '@/components/PublishPanel.vue'
 import {
   NODE_TYPES,
   NODE_TYPE_META,
@@ -108,6 +116,9 @@ const knowledgeLoading = ref(false)
 /** 阶梯 7：定时计划（null = 没有计划） */
 const schedule = ref(null)
 const scheduleVisible = ref(false)
+/** 阶梯 8：发布状态（null = 未发布） */
+const publishInfo = ref(null)
+const publishVisible = ref(false)
 const loading = ref(true)
 const saving = ref(false)
 const dirty = ref(false)
@@ -264,6 +275,18 @@ function onScheduleSaved(saved) {
   schedule.value = saved || null
 }
 
+async function loadPublish() {
+  try {
+    publishInfo.value = await getPublish(id.value)
+  } catch (e) {
+    publishInfo.value = null
+  }
+}
+
+function onPublishChanged(published) {
+  publishInfo.value = published ? publishInfo.value || { published: true } : null
+}
+
 async function loadKnowledge() {
   knowledgeLoading.value = true
   try {
@@ -301,7 +324,7 @@ async function loadAll() {
 }
 
 onMounted(async () => {
-  await Promise.all([loadTools(), loadKnowledge(), loadSchedule()])
+  await Promise.all([loadTools(), loadKnowledge(), loadSchedule(), loadPublish()])
   loadAll()
 })
 
@@ -366,6 +389,15 @@ watch(id, (next, prev) => {
   border-radius: 50%;
   background: var(--status-success);
   box-shadow: 0 0 6px var(--status-success);
+}
+
+.pub-dot {
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--accent-2);
+  box-shadow: 0 0 6px var(--accent-2-glow);
 }
 
 .editor__body {
