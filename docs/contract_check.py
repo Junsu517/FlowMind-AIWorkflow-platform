@@ -396,6 +396,19 @@ def main():
         r = requests.post(f"{API}/public/run/{api_key}", json={"input": {}}, timeout=10)
         check("吊销后原 key 401", r.status_code == 401 and expect_error(r, "INVALID_API_KEY"), f"got {r.status_code} {r.text[:120]}")
 
+    print("== 8. 统计仪表盘模块（阶梯 9） ==")
+    r = requests.get(f"{API}/stats/dashboard", headers=h_a, timeout=10)
+    dash = r.json() if r.status_code == 200 else {}
+    check("dashboard 200 且 summary 8 项齐全", r.status_code == 200 and len(dash.get("summary", {})) == 8
+          and has_fields(dash.get("summary", {}), ["totalExecutions", "successRate", "totalTokens", "totalCost",
+                                                  "activeWorkflows", "knowledgeDocs", "publishedApis", "enabledSchedules"]),
+          f"got {r.status_code} {r.text[:150]}")
+    check("daily 固定 30 项且字段齐全", isinstance(dash.get("daily"), list) and len(dash.get("daily", [])) == 30
+          and all(has_fields(d, ["date", "executions", "tokens"]) for d in dash.get("daily", [])),
+          f"daily={str(dash.get('daily'))[:100]}")
+    check("sourceDist 三键齐全", all(k in dash.get("sourceDist", {}) for k in ("manual", "scheduled", "api")),
+          f"got {dash.get('sourceDist')}")
+
     print()
     if failures:
         print(f"结果: FAIL（{len(failures)} 项未通过）")
