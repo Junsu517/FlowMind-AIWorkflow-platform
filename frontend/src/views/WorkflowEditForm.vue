@@ -71,7 +71,12 @@
     </div>
 
     <SchedulePanel v-model:visible="scheduleVisible" :workflow-id="id" @saved="onScheduleSaved" />
-    <PublishPanel v-model:visible="publishVisible" :workflow-id="id" @changed="onPublishChanged" />
+    <PublishPanel
+      v-model:visible="publishVisible"
+      :workflow-id="id"
+      :nodes="nodes"
+      @changed="onPublishChanged"
+    />
   </div>
 </template>
 

@@ -118,6 +118,7 @@
     <PublishPanel
       v-model:visible="publishVisible"
       :workflow-id="id"
+      :nodes="debugNodes"
       @changed="onPublishChanged"
     />
   </div>

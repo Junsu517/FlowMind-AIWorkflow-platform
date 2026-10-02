@@ -65,6 +65,8 @@ function seed() {
     schedules: {},
     // 阶梯 8：发布 API Key（契约 v1.8），按 workflowId 存 { apiKey, createdAt }
     apiKeys: {},
+    // 外部调用限流用的时间戳（mock 模拟后端限流）
+    apiCallLog: [],
     idSeq: { user: 1, workflow: 3, execution: 0, knowledgeBase: 0, kbDoc: 0 }
   }
 }

@@ -36,3 +36,29 @@ export function publish(workflowId) {
 export function unpublish(workflowId) {
   return request.delete(`/workflows/${workflowId}/publish`).then((res) => res.data)
 }
+
+/**
+ * 外部调用两个端点（阶梯 8.5 在线调试用）：
+ * POST /api/public/run/{apiKey}                  -> 202 { executionId }
+ * GET  /api/public/run/{apiKey}/executions/{id}  -> { status, output?, errorMessage?, totalTokens? }
+ *
+ * 注意：这两个端点不需要登录态，请求头里的 JWT 会被后端忽略；
+ * 401 的业务 code 是 INVALID_API_KEY（不是 UNAUTHORIZED），
+ * 所以拦截器不会把它误判成"登录过期"去清 token。
+ */
+export function publicRun(apiKey, input) {
+  return request.post(`/public/run/${apiKey}`, { input: input || {} }).then((res) => res.data)
+}
+
+export function publicGetResult(apiKey, executionId) {
+  return request
+    .get(`/public/run/${apiKey}/executions/${executionId}`)
+    .then((res) => res.data)
+}
+
+/** runUrl 形如 http://host/api/public/run/<apiKey>，把 key 抠出来（已发布后 GET 不再给 key） */
+export function apiKeyFromRunUrl(runUrl) {
+  const text = String(runUrl || '').trim()
+  if (!text) return ''
+  return text.split('/').pop()
+}

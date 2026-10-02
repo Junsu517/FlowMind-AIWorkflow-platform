@@ -134,6 +134,27 @@ function publicDocument(d) {
 }
 
 /** 执行记录对外结构（内部字段 snapshot/logs 不透出到 list/detail） */
+/** 阶梯 8.5：public run 跑完时给 LLM 节点造一段输出（模拟真实回答） */
+const MOCK_API_ANSWER = [
+  '根据天气情况，给你三条建议：',
+  '1. 早晚温差较大，建议内搭长袖 + 薄外套；',
+  '2. 多云转晴，紫外线中等，外出可戴帽子或墨镜；',
+  '3. 若骑车通勤，备一件防风外套，傍晚温度下降明显。'
+].join('\n')
+
+function mockApiReferences(kbId) {
+  const db = getDb()
+  const docs = (db.kbDocuments || []).filter((d) => d.kbId === Number(kbId)).slice(0, 2)
+  if (!docs.length) {
+    return [{ filename: '示例文档.txt', snippet: '（mock）知识库里的一段示例内容。', score: 0.88 }]
+  }
+  return docs.map((d, i) => ({
+    filename: d.filename,
+    snippet: `（mock）来自 ${d.filename} 的相关片段。`,
+    score: Number((0.92 - i * 0.06).toFixed(2))
+  }))
+}
+
 /** 阶梯 8：发布状态（对外永远不带 apiKey） */
 function publicPublish(workflowId, rec) {
   return {
@@ -696,6 +717,13 @@ const routes = [
       const entry = Object.entries(db.apiKeys).find(([, v]) => v.apiKey === key)
       if (!entry) return fail(config, 401, 'INVALID_API_KEY', 'API Key 无效或已被吊销')
       const wfId = Number(entry[0])
+      // 模拟后端的外部调用限流（方便前端验证 429 提示）：60 秒内超过 3 次就限流
+      const now = Date.now()
+      db.apiCallLog = (db.apiCallLog || []).filter((t) => now - t < 60000)
+      if (db.apiCallLog.length >= 3) {
+        return fail(config, 429, 'API_RATE_LIMITED', '外部调用过于频繁，请稍后再试')
+      }
+      db.apiCallLog.push(now)
       const graph = db.graphs[wfId]
       if (!graph || !graph.nodes.length) {
         return fail(config, 400, 'INVALID_GRAPH', '该工作流的图为空，无法执行')
@@ -719,13 +747,47 @@ const routes = [
       }
       db.executions.unshift(exec)
       saveDb()
+
+      // 模拟真实链路：queued → running → success，让在线调试器的轮询能看到完整状态流转
       setTimeout(() => {
         const e = getDb().executions.find((x) => x.id === exec.id)
         if (e && e.status === 'queued') {
           e.status = 'running'
           saveDb()
         }
-      }, 1500)
+      }, 2400)
+      setTimeout(() => {
+        const e = getDb().executions.find((x) => x.id === exec.id)
+        if (!e || e.status === 'success' || e.status === 'failed') return
+        const output = {}
+        let kbId = null
+        for (const n of exec.snapshot || []) {
+          if (n.type === 'input') output[n.nodeKey] = { ...e.input }
+          if (n.type === 'http') {
+            output[n.nodeKey] = {
+              [n.config?.output_key || 'data']: {
+                mock: true,
+                city: e.input?.city ?? '南昌',
+                temp_C: 26,
+                weatherDesc: '多云转晴'
+              }
+            }
+          }
+          if (n.type === 'llm') {
+            kbId = n.config?.knowledge_base_id ?? null
+            const out = { [n.config?.output_key || 'text']: MOCK_API_ANSWER }
+            if (kbId) out.references = mockApiReferences(kbId)
+            output[n.nodeKey] = out
+          }
+        }
+        e.output = output
+        e.status = 'success'
+        e.totalTokens = 270
+        e.totalCost = 0.000038
+        e.durationMs = 5200
+        e.finishedAt = iso()
+        saveDb()
+      }, 5200)
       return settle(config, 202, { executionId: exec.id })
     }
   },

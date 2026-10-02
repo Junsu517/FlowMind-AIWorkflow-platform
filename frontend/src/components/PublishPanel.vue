@@ -2,7 +2,7 @@
   <el-drawer
     :model-value="visible"
     title="发布为 API"
-    size="480px"
+    size="520px"
     :close-on-click-modal="false"
     @update:model-value="(v) => emit('update:visible', v)"
   >
@@ -21,11 +21,13 @@
         <el-button type="primary" :icon="Promotion" :loading="publishing" @click="onPublish">
           发布工作流
         </el-button>
+        <p class="hint">发布后可在此<b>在线调试</b>：填输入、点调用、看结果，不用再开终端敲 curl。</p>
       </template>
 
-      <!-- ---------- 发布成功：一次性展示密钥 ---------- -->
-      <template v-else-if="secret">
-        <div class="secret">
+      <!-- ---------- 已发布（含"刚发布"那一次） ---------- -->
+      <template v-else>
+        <!-- 一次性展示密钥 -->
+        <div v-if="secret" class="secret">
           <div class="secret__head">
             <el-icon><Key /></el-icon>
             <span>发布成功，请立即保存下方密钥</span>
@@ -53,12 +55,8 @@
           </label>
         </div>
 
-        <CurlSample :run-url="secret.runUrl" />
-      </template>
-
-      <!-- ---------- 已发布（再次打开） ---------- -->
-      <template v-else>
-        <div class="live">
+        <!-- 已发布状态条 -->
+        <div v-else class="live">
           <div class="live__head">
             <span class="live__dot" />
             <span>已发布</span>
@@ -79,7 +77,74 @@
           </p>
         </div>
 
-        <CurlSample :run-url="info.runUrl" />
+        <!-- ---------- 在线调试（阶梯 8.5） ---------- -->
+        <div class="debug">
+          <div class="debug__head">
+            <span class="debug__title">在线调试</span>
+            <el-button
+              type="primary"
+              :icon="VideoPlay"
+              :loading="debugRunning"
+              @click="onDebugRun"
+            >
+              {{ debugRunning ? '调用中…' : '调用' }}
+            </el-button>
+          </div>
+
+          <p v-if="!fields.length" class="debug__empty">
+            这个工作流没有 input 节点，将用空入参调用。
+          </p>
+          <div v-else class="debug__fields">
+            <label v-for="f in fields" :key="f.key" class="debug__field">
+              <span class="debug__label">
+                {{ f.label || f.key }}
+                <span class="debug__key fm-mono">{{ f.key }}</span>
+              </span>
+              <el-input
+                v-if="f.type === 'number'"
+                v-model.number="form[f.key]"
+                type="number"
+                :placeholder="String(f.default ?? '')"
+              />
+              <el-input
+                v-else
+                v-model="form[f.key]"
+                :placeholder="String(f.default ?? '')"
+                clearable
+              />
+            </label>
+          </div>
+
+          <p v-if="debugHint" class="debug__hint">{{ debugHint }}</p>
+
+          <div v-if="debugRunning || result" class="debug__result">
+            <div class="debug__status">
+              <span class="fm-dot" :class="`fm-dot--${resultStatus}`" />
+              <span>{{ statusText(resultStatus) }}</span>
+              <span v-if="debugRunning" class="debug__polling">每 2 秒自动查询结果…</span>
+            </div>
+
+            <pre v-if="outputText" class="debug__text">{{ outputText }}</pre>
+
+            <ReferenceList v-if="references.length" :items="references" />
+
+            <div v-if="result && result.status === 'success'" class="debug__stats">
+              <span>tokens <b class="fm-mono">{{ result.totalTokens ?? 0 }}</b></span>
+              <span v-if="result.totalCost != null">
+                费用 <b class="fm-mono">{{ formatCost(result.totalCost) }}</b>
+              </span>
+            </div>
+
+            <div v-if="result?.errorMessage" class="debug__error">{{ result.errorMessage }}</div>
+          </div>
+        </div>
+
+        <!-- curl 示例降级到"高级"折叠里，默认给在线调试让位 -->
+        <el-collapse class="advanced">
+          <el-collapse-item title="高级：curl 调用示例" name="curl">
+            <CurlSample :run-url="(secret || info)?.runUrl || ''" />
+          </el-collapse-item>
+        </el-collapse>
 
         <div class="danger">
           <el-button :icon="RefreshRight" :loading="republishing" @click="onRepublish">
@@ -95,7 +160,7 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Link,
@@ -103,15 +168,26 @@ import {
   Promotion,
   RefreshRight,
   CircleClose,
-  DocumentCopy
+  DocumentCopy,
+  VideoPlay
 } from '@element-plus/icons-vue'
 import CurlSample from '@/components/PublishCurlSample.vue'
-import { getPublish, publish, unpublish } from '@/api/publish'
-import { formatDateTime } from '@/utils/format'
+import ReferenceList from '@/components/editor/ReferenceList.vue'
+import {
+  getPublish,
+  publish,
+  unpublish,
+  publicRun,
+  publicGetResult,
+  apiKeyFromRunUrl
+} from '@/api/publish'
+import { formatDateTime, formatCost } from '@/utils/format'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
-  workflowId: { type: [String, Number], required: true }
+  workflowId: { type: [String, Number], required: true },
+  /** 编辑器里的节点（已归一化成 { nodeKey, type, name, config }），用来渲染调试入参 */
+  nodes: { type: Array, default: () => [] }
 })
 
 const emit = defineEmits(['update:visible', 'changed'])
@@ -122,16 +198,76 @@ const republishing = ref(false)
 const unpublishing = ref(false)
 const copied = ref('')
 
-/** 已发布信息（GET 结果，不含 key） */
 const info = ref(null)
-/** 刚刚发布出来的一次性密钥，只活在本次打开期间 */
 const secret = ref(null)
+
+// ---------- 在线调试 ----------
+const form = ref({})
+const result = ref(null)
+const debugRunning = ref(false)
+const debugHint = ref('')
+let pollTimer = null
+
+const fields = computed(() => {
+  const inputNode = (props.nodes || []).find((n) => n.type === 'input')
+  return inputNode?.config?.fields || []
+})
+
+const llmNode = computed(() => (props.nodes || []).find((n) => n.type === 'llm') || null)
+
+/** 已发布后 GET 不返回 key，只能从 runUrl 里抠出来 */
+const apiKey = computed(
+  () => secret.value?.apiKey || apiKeyFromRunUrl(info.value?.runUrl) || ''
+)
+
+const resultStatus = computed(() => result.value?.status || 'queued')
+
+const outputText = computed(() => {
+  const out = result.value?.output
+  if (!out) return ''
+  const node = llmNode.value
+  if (node) {
+    const v = out[node.nodeKey]
+    if (v != null) {
+      const key = node.config?.output_key || 'text'
+      return typeof v === 'string' ? v : String(v[key] ?? '')
+    }
+  }
+  // 兜底：取最后一个节点的字符串值
+  const last = Object.values(out).pop()
+  return typeof last === 'string' ? last : ''
+})
+
+const references = computed(() => {
+  const node = llmNode.value
+  if (!node) return []
+  return result.value?.output?.[node.nodeKey]?.references || []
+})
+
+function statusText(status) {
+  const map = { queued: '排队中', running: '运行中', success: '成功', failed: '失败' }
+  return map[status] || status || '-'
+}
+
+watch(
+  fields,
+  (fs) => {
+    const next = {}
+    for (const f of fs) next[f.key] = f.default ?? ''
+    form.value = next
+  },
+  { immediate: true }
+)
 
 watch(
   () => props.visible,
   (v) => {
-    if (v) load()
-    else secret.value = null // 关掉抽屉就不再展示密钥
+    if (v) {
+      load()
+    } else {
+      secret.value = null // 关掉抽屉就不再展示密钥
+      stopPoll()
+    }
   }
 )
 
@@ -144,6 +280,13 @@ async function load() {
     info.value = null
   } finally {
     loading.value = false
+  }
+}
+
+function stopPoll() {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
   }
 }
 
@@ -170,6 +313,73 @@ async function copy(which, text) {
   } catch (e) {
     ElMessage.warning('复制失败，请手动选中复制')
   }
+}
+
+async function onDebugRun() {
+  const key = apiKey.value
+  if (!key) {
+    debugHint.value = '没有可用的 API Key，请重新发布后再试'
+    return
+  }
+  stopPoll()
+  result.value = null
+  debugHint.value = ''
+  debugRunning.value = true
+
+  const input = {}
+  for (const f of fields.value) {
+    const v = form.value[f.key]
+    if (v !== '' && v !== undefined && v !== null) input[f.key] = v
+  }
+
+  try {
+    const data = await publicRun(key, input)
+    const executionId = data?.executionId
+    if (!executionId) {
+      debugHint.value = '调用已受理但没拿到 executionId，请稍后重试'
+      debugRunning.value = false
+      return
+    }
+    await startPolling(key, executionId)
+  } catch (e) {
+    const status = e?.response?.status
+    const code = e?.response?.data?.code
+    if (status === 401 || code === 'INVALID_API_KEY') {
+      debugHint.value = 'API Key 已失效，请重新发布后再试'
+    } else if (status === 429 || code === 'API_RATE_LIMITED') {
+      debugHint.value = '调用太频繁被限流，请稍后再试'
+    } else if (status === 409) {
+      debugHint.value = '该工作流正在运行中，等这次跑完再试'
+    } else {
+      // 400 等具体原因（含字段校验）拦截器已弹出后端 message
+      debugHint.value = '调用失败，确认工作流已保存后再试'
+    }
+    debugRunning.value = false
+  }
+}
+
+/** 202 之后轮询结果直到终态（契约 v1.8 的 public run 没有 SSE） */
+function startPolling(key, executionId) {
+  return new Promise((resolve) => {
+    const tick = async () => {
+      try {
+        const r = await publicGetResult(key, executionId)
+        result.value = r
+        if (r?.status === 'success' || r?.status === 'failed') {
+          stopPoll()
+          debugRunning.value = false
+          resolve()
+        }
+      } catch (e) {
+        stopPoll()
+        debugRunning.value = false
+        debugHint.value = '查询结果失败，请稍后重试'
+        resolve()
+      }
+    }
+    tick()
+    pollTimer = setInterval(tick, 2000)
+  })
 }
 
 async function onPublish() {
@@ -242,6 +452,8 @@ async function onUnpublish() {
     await unpublish(props.workflowId)
     info.value = null
     secret.value = null
+    stopPoll()
+    result.value = null
     emit('changed', false)
     ElMessage.success('已取消发布')
   } catch (e) {
@@ -250,6 +462,8 @@ async function onUnpublish() {
     unpublishing.value = false
   }
 }
+
+onBeforeUnmount(stopPoll)
 </script>
 
 <style scoped>
@@ -262,7 +476,7 @@ async function onUnpublish() {
   display: flex;
   gap: 14px;
   padding: 18px;
-  margin-bottom: 20px;
+  margin-bottom: 18px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border-glass);
   background: var(--bg-glass);
@@ -290,6 +504,17 @@ async function onUnpublish() {
 
 .intro__text b {
   color: var(--text-primary);
+}
+
+.hint {
+  margin: 14px 0 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text-faint);
+}
+
+.hint b {
+  color: var(--text-secondary);
 }
 
 /* ---------- 一次性密钥 ---------- */
@@ -355,6 +580,118 @@ async function onUnpublish() {
   color: var(--text-faint);
 }
 
+/* ---------- 在线调试 ---------- */
+.debug {
+  margin-top: 20px;
+  padding: 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-glass);
+  background: var(--bg-glass);
+}
+
+.debug__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.debug__title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.debug__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.debug__field {
+  display: block;
+}
+
+.debug__label {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 5px;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.debug__key {
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.debug__empty,
+.debug__hint {
+  margin: 12px 0 0;
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--text-faint);
+}
+
+.debug__hint {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  color: var(--status-failed);
+  background: rgba(248, 113, 113, 0.1);
+}
+
+.debug__result {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-glass);
+}
+
+.debug__status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-primary);
+}
+
+.debug__polling {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.debug__text {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--overlay-3);
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.debug__stats {
+  display: flex;
+  gap: 16px;
+  margin-top: 10px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+.debug__stats b {
+  color: var(--text-primary);
+}
+
+.debug__error {
+  margin-top: 10px;
+  font-size: 11.5px;
+  color: var(--status-failed);
+}
+
 /* ---------- 通用 ---------- */
 .kv {
   display: block;
@@ -381,10 +718,15 @@ async function onUnpublish() {
   white-space: nowrap;
 }
 
+.advanced {
+  margin-top: 16px;
+  border-top: 1px solid var(--border-glass);
+}
+
 .danger {
   display: flex;
   gap: 8px;
-  margin-top: 20px;
+  margin-top: 16px;
   padding-top: 16px;
   border-top: 1px solid var(--border-glass);
 }
