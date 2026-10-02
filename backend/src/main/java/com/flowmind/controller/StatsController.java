@@ -1,5 +1,6 @@
 package com.flowmind.controller;
 
+import com.flowmind.dto.stats.DashboardVO;
 import com.flowmind.dto.stats.UsageVO;
 import com.flowmind.service.StatsService;
 import lombok.RequiredArgsConstructor;
@@ -17,5 +18,10 @@ public class StatsController {
     @GetMapping("/usage")
     public UsageVO usage() {
         return statsService.usage();
+    }
+
+    @GetMapping("/dashboard")
+    public DashboardVO dashboard() {
+        return statsService.dashboard();
     }
 }

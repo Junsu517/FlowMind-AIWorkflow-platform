@@ -143,6 +143,10 @@ CREATE TABLE IF NOT EXISTS workflow_schedules (
 -- 已有 executions 表的环境（本地/生产）手动执行一次，重复执行报 Duplicate column 可忽略
 ALTER TABLE executions ADD COLUMN trigger_type VARCHAR(10) NOT NULL DEFAULT 'manual';
 
+-- executions 组合索引（阶梯 9：仪表盘按 user+日期聚合的覆盖索引）
+-- 已有 executions 表的环境手动执行一次，重复执行报 Duplicate key 可忽略
+ALTER TABLE executions ADD INDEX idx_user_started (user_id, started_at);
+
 -- 工作流 API 发布密钥表（阶梯 8，SQL 来自 docs/阶梯8-HTTPAPI发布技术方案.md §2，统筹定稿）
 CREATE TABLE IF NOT EXISTS workflow_api_keys (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
