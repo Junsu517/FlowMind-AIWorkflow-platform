@@ -88,15 +88,12 @@ nginx（静态托管 + 反向代理）
 ```
 flowmind/
 ├── backend/     Spring Boot 3 后端（engine/ 为并行执行引擎核心）
-├── frontend/    Vue 3 + Vue Flow 前端
-├── docs/        各阶段设计文档、任务卡、压测报告
-├── 技术方案.md   完整技术方案（架构演进与设计决策）
-└── API契约.md    前后端接口契约（docs/contract_check.py 机器验收）
+└── frontend/    Vue 3 + Vue Flow 前端
 ```
 
 ## 性能与质量
 
-- JMeter 压测：提交链路 10 并发 p95 240ms（详见 `docs/压测报告-2026-10-01.md`）
+- JMeter 压测：提交链路 10 并发 p95 240ms
 - 56+ 项接口契约自动化验收，对生产环境 ALL PASS
 - 执行引擎 48 个单元测试覆盖边界语义（汇聚节点、条件路由、fail-fast）
 
