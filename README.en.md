@@ -101,9 +101,9 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for the production deployment guide (Alibaba 
 - 56+ automated API contract checks, all passing against production
 - 48 unit tests covering engine edge cases (merge nodes, conditional routing, fail-fast)
 
-## Tutorial
+## Dev Journal
 
-A step-by-step tutorial (in Chinese) covering all nine iterations of this project — see [`tutorial/`](tutorial/).
+A first-person development journal (in Chinese) covering all nine iterations — the "why" behind each decision and the pitfalls we hit — see [`tutorial/`](tutorial/).
 
 ## License
 
