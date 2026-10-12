@@ -101,10 +101,6 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for the production deployment guide (Alibaba 
 - 56+ automated API contract checks, all passing against production
 - 48 unit tests covering engine edge cases (merge nodes, conditional routing, fail-fast)
 
-## Dev Journal
-
-A first-person development journal (in Chinese) covering all nine iterations — the "why" behind each decision and the pitfalls we hit — see [`tutorial/`](tutorial/).
-
 ## License
 
 [Mulan Permissive Software License, Version 2 (MulanPSL-2.0)](http://license.coscl.org.cn/MulanPSL2)

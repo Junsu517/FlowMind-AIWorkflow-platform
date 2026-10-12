@@ -95,10 +95,6 @@ flowmind/
 
 生产部署指南见 [DEPLOYMENT.md](DEPLOYMENT.md)（阿里云 ECS + Nginx + systemd，含构建铁律与验证清单）。
 
-## 开发实录
-
-九阶梯完整开发实录见 [tutorial/](tutorial/)——第一人称记录「为什么这么做、踩了什么坑」，每章含面试深挖，末章为真实 bug 故事集。
-
 ## 性能与质量
 
 - JMeter 压测：提交链路 10 并发 p95 240ms
