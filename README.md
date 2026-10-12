@@ -91,6 +91,14 @@ flowmind/
 └── frontend/    Vue 3 + Vue Flow 前端
 ```
 
+## 部署
+
+生产部署指南见 [DEPLOYMENT.md](DEPLOYMENT.md)（阿里云 ECS + Nginx + systemd，含构建铁律与验证清单）。
+
+## 教程
+
+九阶梯完整实战教程见 [tutorial/](tutorial/)（每章含面试深挖，末章为真实 bug 故事集）。
+
 ## 性能与质量
 
 - JMeter 压测：提交链路 10 并发 p95 240ms
