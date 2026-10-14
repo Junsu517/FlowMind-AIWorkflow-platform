@@ -1,5 +1,10 @@
 <template>
-  <div class="editor">
+  <!--
+    根类名用 form-editor 而不是 editor：Vue scoped CSS 会把父组件（WorkflowEdit）
+    的样式作用到子组件根元素，画布版的 .editor{height:100vh;overflow:hidden} 会
+    命中这里，把整个表单版锁成一屏无法滚动。改名做双向绝缘。
+  -->
+  <div class="form-editor">
     <AppHeader />
 
     <div class="editor__bar fm-glass">
@@ -339,7 +344,7 @@ watch(id, (next, prev) => {
 </script>
 
 <style scoped>
-.editor {
+.form-editor {
   min-height: 100%;
 }
 

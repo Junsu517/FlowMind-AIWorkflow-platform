@@ -4,13 +4,19 @@
 
     <div class="fm-page">
       <div class="page-head">
-        <div>
+        <div data-tour="workflow-concept">
           <h2 class="page-head__title">我的工作流</h2>
           <p class="page-head__sub">
             共 <span class="fm-mono">{{ total }}</span> 个工作流 · 拖拽编排节点，保存后一键运行调试
           </p>
         </div>
-        <el-button type="primary" :icon="Plus" size="large" @click="openCreate">
+        <el-button
+          data-tour="create-workflow"
+          type="primary"
+          :icon="Plus"
+          size="large"
+          @click="openCreate"
+        >
           新建工作流
         </el-button>
       </div>

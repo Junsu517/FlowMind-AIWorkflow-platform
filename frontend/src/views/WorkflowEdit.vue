@@ -5,7 +5,7 @@
     <el-button class="form-mode__back" :icon="GridIcon" @click="backToCanvas">返回画布版</el-button>
   </div>
 
-  <div v-else class="editor">
+  <div v-else class="canvas-editor">
     <AppHeader />
 
     <div class="editor__bar">
@@ -18,7 +18,7 @@
 
       <div class="editor__bar-right">
         <el-dropdown trigger="click" @command="applyTemplate">
-          <el-button class="tpl-btn" :icon="MagicStick">模板</el-button>
+          <el-button class="tpl-btn" data-tour="template" :icon="MagicStick">模板</el-button>
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item command="weather">天气助手（输入 → 工具 → LLM）</el-dropdown-item>
@@ -35,7 +35,12 @@
           <span v-if="schedule?.enabled" class="sched-dot" />
         </el-button>
         <!-- 阶梯 8：发布为 HTTP API（契约 v1.8） -->
-        <el-button :icon="Promotion" :class="{ 'has-sched': publishInfo }" @click="publishVisible = true">
+        <el-button
+          data-tour="publish"
+          :icon="Promotion"
+          :class="{ 'has-sched': publishInfo }"
+          @click="publishVisible = true"
+        >
           发布
           <span v-if="publishInfo" class="pub-dot" />
         </el-button>
@@ -54,6 +59,7 @@
 
       <div
         class="canvas"
+        data-tour="canvas"
         :class="{ 'is-drop-target': dropActive, 'is-connecting': connecting }"
         @dragover.prevent="onDragOver"
         @dragleave="onDragLeave"
@@ -103,7 +109,7 @@
 
     <!-- 调试面板：收起时只留标题条，SSE 逻辑完全复用 DebugPanel -->
     <div class="dock" :class="{ 'is-open': debugOpen }">
-      <div class="dock__bar" @click="debugOpen = !debugOpen">
+      <div class="dock__bar" data-tour="run" @click="debugOpen = !debugOpen">
         <el-icon class="dock__icon"><VideoPlay /></el-icon>
         <span class="dock__title">调试面板</span>
         <span v-if="runState" class="dock__state">{{ runState }}</span>
@@ -596,7 +602,8 @@ watch(formMode, (isForm) => {
 </script>
 
 <style scoped>
-.editor {
+/* 画布版锁屏布局。类名改 canvas-editor 的原因见模板注释（防串到表单版根节点） */
+.canvas-editor {
   display: flex;
   flex-direction: column;
   height: 100vh;

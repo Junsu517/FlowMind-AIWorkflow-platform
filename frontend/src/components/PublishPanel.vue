@@ -44,8 +44,21 @@
             </div>
           </label>
 
+          <div class="notice notice--warn">
+            <el-icon class="notice__icon"><WarningFilled /></el-icon>
+            <div class="notice__text">
+              <b>这不是网页链接</b>，别粘到浏览器地址栏打开。它由程序用 <b>POST</b> 方式调用。
+              <span class="notice__sub">
+                在浏览器地址栏打开只会看到一段使用说明，不会执行工作流。
+              </span>
+            </div>
+          </div>
+
           <label class="kv">
-            <span class="kv__k">调用地址</span>
+            <span class="kv__k">
+              调用地址
+              <em class="kv__once">仅创建时展示一次</em>
+            </span>
             <div class="kv__v">
               <code class="fm-code kv__code">{{ secret.runUrl }}</code>
               <el-button text :icon="DocumentCopy" @click="copy('url', secret.runUrl)">
@@ -63,8 +76,21 @@
             <span class="live__time fm-mono">{{ formatDateTime(info.createdAt) }}</span>
           </div>
 
+          <div class="notice notice--warn">
+            <el-icon class="notice__icon"><WarningFilled /></el-icon>
+            <div class="notice__text">
+              <b>这不是网页链接</b>，别粘到浏览器地址栏打开。它由程序用 <b>POST</b> 方式调用。
+              <span class="notice__sub">
+                在浏览器地址栏打开只会看到一段使用说明，不会执行工作流。
+              </span>
+            </div>
+          </div>
+
           <label class="kv">
-            <span class="kv__k">调用地址</span>
+            <span class="kv__k">
+              调用地址
+              <em class="kv__once">地址里已含你的 Key，不要发给别人</em>
+            </span>
             <div class="kv__v">
               <code class="fm-code kv__code">{{ info.runUrl }}</code>
               <el-button text :icon="DocumentCopy" @click="copy('url', info.runUrl)">
@@ -139,12 +165,13 @@
           </div>
         </div>
 
-        <!-- curl 示例降级到"高级"折叠里，默认给在线调试让位 -->
-        <el-collapse class="advanced">
-          <el-collapse-item title="高级：curl 调用示例" name="curl">
-            <CurlSample :run-url="(secret || info)?.runUrl || ''" />
-          </el-collapse-item>
-        </el-collapse>
+        <!-- 调用示例：curl / Python / JavaScript 一键复制，示例里是真实 Key -->
+        <div class="samples">
+          <div class="samples__title">
+            <span>三种语言的调用示例（已填好你的 Key，可直接复制运行）</span>
+          </div>
+          <ApiSample :run-url="(secret || info)?.runUrl || ''" :fields="fields" />
+        </div>
 
         <div class="danger">
           <el-button :icon="RefreshRight" :loading="republishing" @click="onRepublish">
@@ -169,9 +196,10 @@ import {
   RefreshRight,
   CircleClose,
   DocumentCopy,
-  VideoPlay
+  VideoPlay,
+  WarningFilled
 } from '@element-plus/icons-vue'
-import CurlSample from '@/components/PublishCurlSample.vue'
+import ApiSample from '@/components/PublishApiSample.vue'
 import ReferenceList from '@/components/editor/ReferenceList.vue'
 import {
   getPublish,
@@ -692,6 +720,41 @@ onBeforeUnmount(stopPoll)
   color: var(--status-failed);
 }
 
+/* ---------- 醒目提示：这是给小白看的，不能是灰色小字 ---------- */
+.notice {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--warn-border);
+  background: var(--warn-soft);
+}
+
+.notice__icon {
+  flex: none;
+  margin-top: 1px;
+  font-size: 16px;
+  color: var(--warn);
+}
+
+.notice__text {
+  font-size: 12.5px;
+  line-height: 1.75;
+  color: var(--text-primary);
+}
+
+.notice__text b {
+  color: var(--warn);
+}
+
+.notice__sub {
+  display: block;
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
 /* ---------- 通用 ---------- */
 .kv {
   display: block;
@@ -703,6 +766,17 @@ onBeforeUnmount(stopPoll)
   margin-bottom: 6px;
   font-size: 11.5px;
   color: var(--text-secondary);
+}
+
+.kv__once {
+  margin-left: 6px;
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--warn);
+  background: var(--warn-soft);
+  border: 1px solid var(--warn-border);
+  border-radius: 999px;
+  padding: 1px 8px;
 }
 
 .kv__v {
@@ -718,9 +792,17 @@ onBeforeUnmount(stopPoll)
   white-space: nowrap;
 }
 
-.advanced {
-  margin-top: 16px;
+.samples {
+  margin-top: 18px;
+  padding-top: 16px;
   border-top: 1px solid var(--border-glass);
+}
+
+.samples__title {
+  margin-bottom: 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
 }
 
 .danger {
