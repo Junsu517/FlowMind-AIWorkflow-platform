@@ -51,6 +51,25 @@ public class GlobalExceptionHandler {
                 new ErrorResponse(ErrorCode.VALIDATION_ERROR.getCode(), "请求参数格式错误: " + ex.getMessage()));
     }
 
+    /** 405 而非兜底 500（阶梯 9.5：浏览器打开 API 链接一类场景）。 */
+    @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class)
+    public void handleMethodNotSupported(org.springframework.web.HttpRequestMethodNotSupportedException ex,
+                                         HttpServletResponse response) throws IOException {
+        java.util.List<String> allowed = ex.getSupportedHttpMethods() == null
+                ? java.util.List.of("POST")
+                : ex.getSupportedHttpMethods().stream().map(org.springframework.http.HttpMethod::name).toList();
+        com.fasterxml.jackson.databind.node.ArrayNode allowedArray = objectMapper.createArrayNode();
+        allowed.forEach(allowedArray::add);
+        String body = objectMapper.createObjectNode()
+                .put("code", "METHOD_NOT_ALLOWED")
+                .put("message", "此端点仅支持 " + String.join(", ", allowed) + " 请求")
+                .set("allowedMethods", allowedArray)
+                .toString();
+        response.setStatus(405);
+        response.setContentType("application/json;charset=UTF-8");
+        response.getWriter().write(body);
+    }
+
     @ExceptionHandler(Exception.class)
     public void handleUnknown(Exception ex, HttpServletResponse response) throws IOException {
         log.error("未处理异常", ex);

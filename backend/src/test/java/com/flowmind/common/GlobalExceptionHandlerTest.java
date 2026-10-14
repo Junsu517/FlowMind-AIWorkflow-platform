@@ -73,4 +73,18 @@ class GlobalExceptionHandlerTest {
         assertEquals("{\"code\":\"INTERNAL_ERROR\",\"message\":\"服务器内部错误\"}",
                 response.getContentAsString());
     }
+
+    @Test
+    void methodNotSupportedMapsTo405() throws Exception {
+        org.springframework.web.HttpRequestMethodNotSupportedException ex =
+                new org.springframework.web.HttpRequestMethodNotSupportedException("GET");
+        handler.handleMethodNotSupported(ex, response);
+
+        assertEquals(405, response.getStatus());
+        assertEquals("application/json;charset=UTF-8", response.getContentType());
+        String body = response.getContentAsString();
+        assertTrue(body.contains("\"code\":\"METHOD_NOT_ALLOWED\""), body);
+        assertTrue(body.contains("\"allowedMethods\":[\"POST\"]"), body);
+        assertTrue(body.contains("仅支持 POST"), body);
+    }
 }

@@ -67,10 +67,11 @@ class StatsServiceTest {
 
     @Test
     void usageAggregatesTotalsAndByDay() {
-        LocalDateTime now = LocalDateTime.now();
-        executionMapper.insert(execution("success", 100, new BigDecimal("0.010000"), now));
-        executionMapper.insert(execution("success", 200, new BigDecimal("0.020000"), now.minusHours(1)));
-        executionMapper.insert(execution("failed", 50, BigDecimal.ZERO, now.minusDays(20)));
+        // 用当日固定时刻，避免凌晨跨午夜导致 now-1h 落到昨天（时间敏感 flaky）
+        LocalDateTime today = java.time.LocalDate.now().atTime(12, 0);
+        executionMapper.insert(execution("success", 100, new BigDecimal("0.010000"), today));
+        executionMapper.insert(execution("success", 200, new BigDecimal("0.020000"), today.minusHours(1)));
+        executionMapper.insert(execution("failed", 50, BigDecimal.ZERO, today.minusDays(20)));
 
         UsageVO usage = statsService.usage();
 
@@ -80,7 +81,7 @@ class StatsServiceTest {
 
         List<UsageVO.DayCountVO> byDay = usage.getExecutionsByDay();
         assertEquals(1, byDay.size(), "20 天前的不进 14 天窗口，今日两条聚合为一条");
-        assertEquals(now.toLocalDate().toString(), byDay.get(0).getDate());
+        assertEquals(today.toLocalDate().toString(), byDay.get(0).getDate());
         assertEquals(2, byDay.get(0).getCount());
         assertTrue(byDay.get(0).getDate().matches("\\d{4}-\\d{2}-\\d{2}"), "日期为 yyyy-MM-dd 字符串");
     }
